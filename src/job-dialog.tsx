@@ -20,7 +20,8 @@ export function JobDialog(props: {
   const filtered: Accessor<Job[]> = createMemo((): Job[] => {
     const needle: string = query().trim().toLowerCase()
     return needle ? props.jobs.filter((job: Job): boolean =>
-      [job.name, job.stage, job.status, String(job.id)].some((value: string): boolean => value.toLowerCase().includes(needle))) : props.jobs
+      [job.name, job.stage, job.status, String(job.id), job.trigger ? "trigger" : "", String(job.downstream?.id ?? "")]
+        .some((value: string): boolean => value.toLowerCase().includes(needle))) : props.jobs
   })
   const start: Accessor<number> = createMemo((): number => Math.floor(selected() / pageSize()) * pageSize())
   const visible: Accessor<Job[]> = createMemo((): Job[] => filtered().slice(start(), start() + pageSize()))
@@ -35,6 +36,10 @@ export function JobDialog(props: {
   let opened: boolean = false
   const choose: (job: Job | undefined) => void = (job: Job | undefined): void => {
     if (!job || opened) return
+    if (job.trigger) {
+      void props.browse(job.downstream?.url ?? job.url)
+      return
+    }
     opened = true
     props.onSelect(job)
   }
@@ -81,11 +86,12 @@ export function JobDialog(props: {
           </text>
           <text fg={props.context.theme.text.muted} wrapMode="none" truncate>
             {job.status}{job.status === "failed" && job.allowFailure ? " (warning · allowed to fail)" : ""} · #{job.id}
+            {job.trigger ? ` · trigger${job.downstream ? ` → pipeline #${job.downstream.id} (${job.downstream.status})` : ""}` : ""}
           </text>
         </box>
       )}</For>
       <text fg={props.context.theme.text.muted} wrapMode="none" truncate>
-        {filtered().length ? `${selected() + 1}/${filtered().length} · ` : ""}↑↓/PgUp/PgDn select · Enter logs · Ctrl+O job · Ctrl+B pipeline · Esc close
+        {filtered().length ? `${selected() + 1}/${filtered().length} · ` : ""}↑↓/PgUp/PgDn select · Enter logs/trigger browser · Ctrl+O job · Ctrl+B pipeline · Esc close
       </text>
     </box>
   )

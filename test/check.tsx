@@ -11,7 +11,7 @@ import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Glab, openBrowser, runCommand, type CommandOptions, type CommandOutput, type Runner } from "../src/glab"
 import { browseUrl, LogDialog, PipelineDialogs } from "../src/dialogs"
 import { JobDialog } from "../src/job-dialog"
-import { cleanText, jobColor, parseJobs, parsePipelines, statusIcon, type Job, type Pipeline, type Snapshot } from "../src/model"
+import { cleanText, jobColor, parseBridges, parseJobs, parsePipelines, statusIcon, type Job, type Pipeline, type Snapshot } from "../src/model"
 import { PipelineStore, type State, type StateBinding } from "../src/store"
 import plugin, { PipelinePanel, type PanelPreferences } from "../src/tui"
 
@@ -23,8 +23,18 @@ const jobData: Record<string, unknown>[] = [
   { id: 202, name: "test", stage: "test", status: "failed", allow_failure: true, web_url: "https://gitlab.example/test/project/-/jobs/202" },
   { id: 201, name: "build", stage: "build", status: "success", allow_failure: false, web_url: "https://gitlab.example/test/project/-/jobs/201" },
 ]
+const bridgeData: Record<string, unknown>[] = [
+  { id: 203, name: "trigger tests", stage: "test", status: "success", allow_failure: false,
+    web_url: "https://gitlab.example/test/project/-/jobs/203",
+    downstream_pipeline: { id: 102, status: "success", web_url: "https://gitlab.example/other/project/-/pipelines/102" } },
+  { id: 204, name: "manual trigger", stage: "deploy", status: "manual", allow_failure: false,
+    web_url: "https://gitlab.example/test/project/-/jobs/204", downstream_pipeline: null },
+]
 const snapshot: Snapshot = { ref: "feature/test", pipelines: parsePipelines(JSON.stringify(pipelineData)) }
 assert.equal(parseJobs(JSON.stringify(jobData))[0].allowFailure, true)
+assert.equal(parseBridges(JSON.stringify(bridgeData))[0].downstream?.id, 102)
+assert.equal(parseBridges(JSON.stringify(bridgeData))[1].downstream, undefined)
+assert.throws(() => parseBridges(JSON.stringify([{ ...bridgeData[0], downstream_pipeline: { id: "102" } }])))
 assert.equal(statusIcon("success"), "✓")
 assert.equal(statusIcon("manual"), "▷")
 assert.equal(statusIcon("unknown-status"), "○")
@@ -45,6 +55,7 @@ const fakeRunner: Runner = async (program: string, args: readonly string[], opti
   if (program === "git") text = "feature/test\n"
   else if (args[0] === "ci") text = JSON.stringify(pipelineData)
   else if (args[1].includes("/trace")) text = `\x1b[31m${Array.from({ length: 2100 }, (_: unknown, index: number): string => `line ${index}`).join("\n")}\x1b[0m`
+  else if (args[1].includes("/bridges")) text = JSON.stringify(bridgeData)
   else text = JSON.stringify(jobData)
   return { text, truncated: false }
 }
@@ -79,8 +90,13 @@ const brokenGlab: Glab = new Glab("/test", async (program: string): Promise<Comm
   throw new Error("GitLab authentication failed")
 })
 await assert.rejects(brokenGlab.snapshot(signal), /GitLab authentication failed/)
-assert.deepEqual((await glab.jobs(101, signal)).map((job: Job): number => job.id), [201, 202])
-assert.ok(calls.at(-1)?.args.includes("--paginate"))
+assert.deepEqual((await glab.jobs(101, signal)).map((job: Job): number => job.id), [201, 202, 203, 204])
+assert.ok(calls.filter((call): boolean => call.args[0] === "api" && /\/(jobs|bridges)\?/.test(call.args[1]))
+  .every((call): boolean => call.args.includes("--paginate")))
+const bridgeOnly: Glab = new Glab("/test", async (_program: string, args: readonly string[]): Promise<CommandOutput> => ({
+  text: args[1].includes("/bridges") ? JSON.stringify(bridgeData) : "[]", truncated: false,
+}))
+assert.deepEqual((await bridgeOnly.jobs(101, signal)).map((job: Job): number => job.id), [203, 204])
 const trace: Awaited<ReturnType<Glab["trace"]>> = await glab.trace(202, signal)
 assert.equal(trace.truncated, true)
 assert.equal(trace.text.split("\n").length, 2000)
@@ -194,7 +210,7 @@ const pendingJobs: PromiseWithResolvers<CommandOutput> = Promise.withResolvers<C
 const cancelGlab: Glab = new Glab("/test", (): Promise<CommandOutput> => pendingJobs.promise)
 const pendingDialog: Promise<void> = dialogs.jobs(cancelGlab, snapshot.pipelines[0])
 loadingClose?.()
-pendingJobs.resolve({ text: JSON.stringify(jobData), truncated: false })
+pendingJobs.resolve({ text: "[]", truncated: false })
 await pendingDialog
 assert.equal(selectionCount, 1)
 
@@ -223,6 +239,30 @@ try {
   assert.equal(selectedJob?.id, 202)
 } finally {
   await colored.dispose()
+}
+assert.equal(pickerRenderer.listenerCount("resize"), 0)
+
+let triggerUrl: string | undefined
+let triggeredLog: Job | undefined
+const triggers: TestRendererSetup = await testRender(
+  (): JSX.Element => <JobDialog context={context} jobs={parseBridges(JSON.stringify(bridgeData))} pipeline={snapshot.pipelines[0]}
+    browse={async (url: string): Promise<void> => { triggerUrl = url }} onSelect={(job: Job): void => { triggeredLog = job }} />,
+  { width: 100, height: 40 },
+)
+try {
+  await triggers.waitForFrame((frame: string): boolean => frame.includes("trigger → pipeline #102 (success)"))
+  const triggerLayer: KeymapLayer | undefined = layers.at(-1)
+  await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "ctrl+o")?.run()
+  assert.equal(triggerUrl, bridgeData[0].web_url)
+  await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
+  assert.equal(triggerUrl, parseBridges(JSON.stringify(bridgeData))[0].downstream?.url)
+  assert.equal(triggeredLog, undefined)
+  await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "down")?.run()
+  await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
+  assert.equal(triggerUrl, bridgeData[1].web_url)
+  assert.equal(triggeredLog, undefined)
+} finally {
+  await triggers.dispose()
 }
 assert.equal(pickerRenderer.listenerCount("resize"), 0)
 

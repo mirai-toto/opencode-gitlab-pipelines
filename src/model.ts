@@ -13,6 +13,8 @@ export interface Job {
   status: string
   allowFailure: boolean
   url: string
+  trigger?: boolean
+  downstream?: { id: number; status: string; url: string }
 }
 
 export interface Snapshot {
@@ -85,6 +87,19 @@ export function parseJobs(raw: string): Job[] {
       id: id(item.id), name: text(item.name), stage: text(item.stage),
       status: text(item.status), allowFailure: item.allow_failure === true,
       url: webUrl(item.web_url),
+    }
+  })
+}
+
+export function parseBridges(raw: string): Job[] {
+  return items(raw).map((value: unknown): Job => {
+    const item: Record<string, unknown> = record(value)
+    const downstream: Record<string, unknown> | undefined = item.downstream_pipeline == null ? undefined : record(item.downstream_pipeline)
+    return {
+      id: id(item.id), name: text(item.name), stage: text(item.stage),
+      status: text(item.status), allowFailure: item.allow_failure === true,
+      url: webUrl(item.web_url), trigger: true,
+      ...(downstream ? { downstream: { id: id(downstream.id), status: text(downstream.status), url: webUrl(downstream.web_url) } } : {}),
     }
   })
 }

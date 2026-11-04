@@ -153,7 +153,7 @@ export class PipelineDialogs {
     )
     if (!jobs) return
     if (jobs.length === 0) {
-      await this.context.ui.dialog.alert({ title: "Pipelines", message: "No regular jobs in this pipeline. Child pipelines can be viewed in the browser." })
+      await this.context.ui.dialog.alert({ title: "Pipelines", message: "No jobs or triggers in this pipeline." })
       return
     }
     this.context.ui.dialog.show((): JSX.Element => <JobDialog context={this.context} jobs={jobs} pipeline={pipeline}

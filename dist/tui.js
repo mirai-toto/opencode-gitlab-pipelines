@@ -79,6 +79,22 @@ function parseJobs(raw) {
     };
   });
 }
+function parseBridges(raw) {
+  return items(raw).map((value) => {
+    const item = record(value);
+    const downstream = item.downstream_pipeline == null ? undefined : record(item.downstream_pipeline);
+    return {
+      id: id(item.id),
+      name: text(item.name),
+      stage: text(item.stage),
+      status: text(item.status),
+      allowFailure: item.allow_failure === true,
+      url: webUrl(item.web_url),
+      trigger: true,
+      ...downstream ? { downstream: { id: id(downstream.id), status: text(downstream.status), url: webUrl(downstream.web_url) } } : {}
+    };
+  });
+}
 function statusIcon(status) {
   if (status === "success")
     return "\u2713";
@@ -208,16 +224,27 @@ class Glab {
   }
   async jobs(pipelineID, signal) {
     this.checkID(pipelineID);
-    const output = await this.run("glab", [
-      "api",
-      `projects/:id/pipelines/${pipelineID}/jobs?per_page=100`,
-      "--method",
-      "GET",
-      "--paginate",
-      "--output",
-      "json"
-    ], { directory: this.directory, signal });
-    return parseJobs(output.text).sort((left, right) => left.id - right.id);
+    const [jobs, bridges] = await Promise.all([
+      this.run("glab", [
+        "api",
+        `projects/:id/pipelines/${pipelineID}/jobs?per_page=100`,
+        "--method",
+        "GET",
+        "--paginate",
+        "--output",
+        "json"
+      ], { directory: this.directory, signal }),
+      this.run("glab", [
+        "api",
+        `projects/:id/pipelines/${pipelineID}/bridges?per_page=100`,
+        "--method",
+        "GET",
+        "--paginate",
+        "--output",
+        "json"
+      ], { directory: this.directory, signal })
+    ]);
+    return [...parseJobs(jobs.text), ...parseBridges(bridges.text)].sort((left, right) => left.id - right.id);
   }
   async trace(jobID, signal) {
     this.checkID(jobID);
@@ -276,7 +303,7 @@ function JobDialog(props) {
   const pageSize = createMemo(() => Math.max(2, Math.min(10, Math.floor((terminalHeight() - 10) / 3))));
   const filtered = createMemo(() => {
     const needle = query().trim().toLowerCase();
-    return needle ? props.jobs.filter((job) => [job.name, job.stage, job.status, String(job.id)].some((value) => value.toLowerCase().includes(needle))) : props.jobs;
+    return needle ? props.jobs.filter((job) => [job.name, job.stage, job.status, String(job.id), job.trigger ? "trigger" : "", String(job.downstream?.id ?? "")].some((value) => value.toLowerCase().includes(needle))) : props.jobs;
   });
   const start = createMemo(() => Math.floor(selected() / pageSize()) * pageSize());
   const visible = createMemo(() => filtered().slice(start(), start() + pageSize()));
@@ -292,6 +319,10 @@ function JobDialog(props) {
   const choose = (job) => {
     if (!job || opened)
       return;
+    if (job.trigger) {
+      props.browse(job.downstream?.url ?? job.url);
+      return;
+    }
     opened = true;
     props.onSelect(job);
   };
@@ -341,7 +372,7 @@ function JobDialog(props) {
     props.context.renderer.off("resize", onResize);
   });
   return (() => {
-    var _el$ = _$createElement("box"), _el$2 = _$createElement("text"), _el$3 = _$createElement("b"), _el$4 = _$createTextNode(`#`), _el$5 = _$createTextNode(` \xB7 `), _el$6 = _$createTextNode(` \xB7 Jobs`), _el$7 = _$createElement("input"), _el$0 = _$createElement("text"), _el$1 = _$createTextNode(`\u2191\u2193/PgUp/PgDn select \xB7 Enter logs \xB7 Ctrl+O job \xB7 Ctrl+B pipeline \xB7 Esc close`);
+    var _el$ = _$createElement("box"), _el$2 = _$createElement("text"), _el$3 = _$createElement("b"), _el$4 = _$createTextNode(`#`), _el$5 = _$createTextNode(` \xB7 `), _el$6 = _$createTextNode(` \xB7 Jobs`), _el$7 = _$createElement("input"), _el$0 = _$createElement("text"), _el$1 = _$createTextNode(`\u2191\u2193/PgUp/PgDn select \xB7 Enter logs/trigger browser \xB7 Ctrl+O job \xB7 Ctrl+B pipeline \xB7 Esc close`);
     _$insertNode(_el$, _el$2);
     _$insertNode(_el$, _el$7);
     _$insertNode(_el$, _el$0);
@@ -410,6 +441,10 @@ function JobDialog(props) {
         _$insert(_el$14, () => job.status, _el$15);
         _$insert(_el$14, () => job.status === "failed" && job.allowFailure ? " (warning \xB7 allowed to fail)" : "", _el$15);
         _$insert(_el$14, () => job.id, null);
+        _$insert(_el$14, (() => {
+          var _c$2 = _$memo(() => !!job.trigger);
+          return () => _c$2() ? ` \xB7 trigger${job.downstream ? ` \u2192 pipeline #${job.downstream.id} (${job.downstream.status})` : ""}` : "";
+        })(), null);
         _$effect((_p$) => {
           var _v$3 = jobColor(job), _v$4 = props.context.theme.text.muted;
           _v$3 !== _p$.e && (_p$.e = _$setProp(_el$12, "fg", _v$3, _p$.e));
@@ -680,7 +715,7 @@ class PipelineDialogs {
     if (jobs.length === 0) {
       await this.context.ui.dialog.alert({
         title: "Pipelines",
-        message: "No regular jobs in this pipeline. Child pipelines can be viewed in the browser."
+        message: "No jobs or triggers in this pipeline."
       });
       return;
     }

@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { release } from "node:os"
 import { join } from "node:path"
-import { cleanText, parseJobs, parsePipelines, webUrl, type Job, type Snapshot, type Trace } from "./model"
+import { cleanText, parseBridges, parseJobs, parsePipelines, webUrl, type Job, type Snapshot, type Trace } from "./model"
 
 export interface CommandOptions {
   directory: string
@@ -98,11 +98,13 @@ export class Glab {
 
   async jobs(pipelineID: number, signal: AbortSignal): Promise<Job[]> {
     this.checkID(pipelineID)
-    const output: CommandOutput = await this.run("glab", [
-      "api", `projects/:id/pipelines/${pipelineID}/jobs?per_page=100`,
-      "--method", "GET", "--paginate", "--output", "json",
-    ], { directory: this.directory, signal })
-    return parseJobs(output.text).sort((left: Job, right: Job): number => left.id - right.id)
+    const [jobs, bridges]: [CommandOutput, CommandOutput] = await Promise.all([
+      this.run("glab", ["api", `projects/:id/pipelines/${pipelineID}/jobs?per_page=100`,
+        "--method", "GET", "--paginate", "--output", "json"], { directory: this.directory, signal }),
+      this.run("glab", ["api", `projects/:id/pipelines/${pipelineID}/bridges?per_page=100`,
+        "--method", "GET", "--paginate", "--output", "json"], { directory: this.directory, signal }),
+    ])
+    return [...parseJobs(jobs.text), ...parseBridges(bridges.text)].sort((left: Job, right: Job): number => left.id - right.id)
   }
 
   async trace(jobID: number, signal: AbortSignal): Promise<Trace> {
