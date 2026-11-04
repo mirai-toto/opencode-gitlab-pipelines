@@ -2,6 +2,7 @@
   "name": "opencode-gitlab-pipelines",
   "version": "0.1.0",
   "description": "Read-only GitLab pipelines, jobs, and logs in the OpenCode V2 sidebar",
+  "repository": "https://github.com/mirai-toto/opencode-gitlab-pipelines",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

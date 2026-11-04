@@ -3,9 +3,9 @@
 Browse GitLab pipelines, jobs, and logs without leaving OpenCode V2.
 Read-only, using your existing `glab` login—no extra tokens or MCP server.
 
-**Status:** local standalone extraction, not published. Verified with OpenCode
-2.2.5 and OpenTUI 0.8.0. A public license has not been selected yet; the package
-is intentionally marked private to prevent accidental npm publication.
+**Status:** available from GitHub, not npm. Verified with OpenCode 2.2.5 and
+OpenTUI 0.8.0. A public license has not been selected yet; the package is
+marked private to prevent accidental npm publication.
 
 ## Features
 
@@ -30,11 +30,22 @@ slashes are supported.
 For self-managed GitLab, configure `glab` for that host using its normal
 authentication workflow. Do not put credentials in this plugin's configuration.
 
-## Install from a local checkout
+## Install
 
-This package is **not available on npm yet**. Once you have a local copy,
-append its absolute directory path to the existing `plugins` list in
-`~/.config/opencode/cli.json`:
+Install from GitHub (requires `git`):
+
+```sh
+opencode plugin add github:mirai-toto/opencode-gitlab-pipelines
+```
+
+OpenCode adds the package to your global configuration and loads its TUI part.
+The runtime plugin ID is `opencode-pipelines`. **Remove any older local copy**
+from the `plugins` list in `~/.config/opencode/cli.json` before enabling this
+package; do not load both at once. Run `opencode plugin list` to check it, and
+`opencode plugin remove github:mirai-toto/opencode-gitlab-pipelines` to uninstall.
+
+Alternatively, to develop from a local checkout, append its absolute directory
+path to the existing `plugins` list in `~/.config/opencode/cli.json`:
 
 ```json
 {
@@ -44,15 +55,9 @@ append its absolute directory path to the existing `plugins` list in
 ```
 
 Preserve your other plugins and settings. OpenCode supplies the plugin and UI
-runtime; no separate `npm install` is needed to load this local checkout.
-Use `/reload` if the change does not appear automatically.
-
-The runtime plugin ID remains `opencode-pipelines`. Do **not** enable this
-checkout alongside another copy of the same plugin. If you already use the
-original local plugin, leave it configured until you intentionally replace its
-entry with this checkout. Preparing this repository does not change that setup.
-
-To disable it, remove only this entry from `cli.json` and reload.
+runtime; no separate `npm install` is needed for a local checkout. To disable
+the local checkout, remove only its entry from `cli.json`. Config changes reload
+automatically; use `/reload` if needed.
 
 ## Controls
 
@@ -138,13 +143,11 @@ Check the package contents without publishing:
 npm pack --dry-run
 ```
 
-## Before sharing publicly
+## Before an open-source release
 
 - Choose a license and confirm you have the right to publish the source.
-- Create the public repository and add its URL to the package metadata.
 - Add screenshots made with synthetic or public data, if desired.
-- Verify the standalone checkout live by replacing—not duplicating—the existing
-  plugin entry when you are ready to switch.
+- Verify the GitHub installation live without loading the old local copy.
 - If publishing to npm, check name availability and remove `private: true`
   only as part of an explicitly authorized release.
 
