@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { EventEmitter } from "node:events"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { DialogOptions, DialogSelectOptions, KeymapCommand, KeymapLayer, SlotClaim, ToastOptions } from "@opencode/plugin/tui/context"
 import type { TestRendererSetup } from "@opentui/core/testing"
@@ -236,8 +237,10 @@ const testBrowse: typeof browseUrl = async (_context: Plugin.Context, client: Gl
   assert.equal(client, glab)
   browserUrl = url
 }
+const logRenderer: EventEmitter & { terminalHeight: number } = Object.assign(new EventEmitter(), { terminalHeight: 45 })
 const logContext: Plugin.Context = {
   ...context,
+  renderer: logRenderer as Plugin.Context["renderer"],
   keymap: { ...context.keymap, layer: (factory: () => KeymapLayer): void => {
     logLayer = factory()
     onCleanup((): void => { logLayer = undefined })
@@ -310,6 +313,8 @@ try {
   assert.ok(logs.captureCharFrame().includes("Showing the tail"))
   assert.equal(await logKey("escape"), false) // Closing remains owned by the host.
   logs.resize(80, 20)
+  logRenderer.terminalHeight = 20
+  logRenderer.emit("resize")
   await logs.renderOnce()
   assert.ok(logs.captureCharFrame().includes("r refresh"))
   assert.ok(logs.captureCharFrame().split("\n").filter((line: string): boolean => line.includes("line ")).length < 20)
@@ -317,6 +322,7 @@ try {
   await logs.dispose()
 }
 assert.equal(logLayer, undefined)
+assert.equal(logRenderer.listenerCount("resize"), 0)
 assert.equal(await logKey("b"), false)
 console.log("Pipelines checks passed: parsing, GET-only commands, pagination, bounded logs, aborts, stale-request isolation, dialogs, sidebar mouse/rendering, and modal log scrolling/browser/refresh feedback.")
 

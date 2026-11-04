@@ -143,9 +143,11 @@ Check the package contents without publishing:
 npm pack --dry-run
 ```
 
-Each shipped TSX file declares `@jsxImportSource @opentui/solid` directly.
-OpenCode's TUI loader may ignore the package's `tsconfig.json`; without the
-per-file directive, it can try to load React instead of OpenTUI's Solid renderer.
+Run `npm run build` before committing source changes. The published TUI entrypoint
+is precompiled in `dist/` with OpenTUI's Solid transform and external runtime
+imports; raw TSX inside an installed package may use the wrong JSX transform or
+a separate renderer context. `npm run check` also renders the packed job dialog
+with a separate OpenTUI installation to catch this.
 
 ## Before an npm release
 

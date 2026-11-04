@@ -8,6 +8,7 @@ import { createEffect, createMemo, For, on, onCleanup, Show, type Accessor } fro
 import type { Store } from "solid-js/store"
 import { Glab } from "./glab"
 import { PipelineDialogs } from "./dialogs"
+export { LogDialog } from "./dialogs"
 import { statusColor, statusIcon, type Pipeline } from "./model"
 import { PipelineStore, type State, type StateBinding } from "./store"
 

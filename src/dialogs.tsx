@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import type { Plugin } from "@opencode/plugin/tui"
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { useTerminalDimensions, type JSX } from "@opentui/solid"
+import type { JSX } from "@opentui/solid"
 import { createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
 import { Glab, openBrowser } from "./glab"
 import { statusIcon, type Job, type Pipeline, type Trace } from "./model"
@@ -19,7 +19,9 @@ export async function browseUrl(context: Plugin.Context, glab: Glab, url: string
 }
 
 export function LogDialog(props: { context: Plugin.Context; glab: Glab; job: Job; browse?: typeof browseUrl }): JSX.Element {
-  const dimensions: Accessor<{ width: number; height: number }> = useTerminalDimensions()
+  const [terminalHeight, setTerminalHeight]: [Accessor<number>, Setter<number>] = createSignal(props.context.renderer.terminalHeight)
+  const onResize: () => void = (): void => { setTerminalHeight(props.context.renderer.terminalHeight) }
+  props.context.renderer.on("resize", onResize)
   const [text, setText]: [Accessor<string>, Setter<string>] = createSignal("Loading job trace…")
   const [note, setNote]: [Accessor<string>, Setter<string>] = createSignal("")
   let request: AbortController | undefined
@@ -64,7 +66,7 @@ export function LogDialog(props: { context: Plugin.Context; glab: Glab; job: Job
     props.context.ui.dialog.set({ size: "xlarge", centered: true })
     void refresh()
   })
-  onCleanup((): void => request?.abort())
+  onCleanup((): void => { props.context.renderer.off("resize", onResize); request?.abort() })
   return (
     <box padding={1} gap={1}>
       <text fg={props.context.theme.text.base} wrapMode="none" truncate>
@@ -72,7 +74,7 @@ export function LogDialog(props: { context: Plugin.Context; glab: Glab; job: Job
       </text>
       <scrollbox
         ref={(value: ScrollBoxRenderable): void => { scroll = value }}
-        focused height={Math.max(3, dimensions().height - 10)}
+        focused height={Math.max(3, terminalHeight() - 10)}
         scrollY scrollX
       >
         {/* OpenTUI 0.8.0 clamps intrinsic text height to the viewport; set the
