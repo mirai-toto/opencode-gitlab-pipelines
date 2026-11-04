@@ -3,9 +3,9 @@
 Browse GitLab pipelines, jobs, and logs without leaving OpenCode V2.
 Read-only, using your existing `glab` login—no extra tokens or MCP server.
 
-**Status:** available from GitHub, not npm. Verified with OpenCode 2.2.5 and
-OpenTUI 0.8.0. A public license has not been selected yet; the package is
-marked private to prevent accidental npm publication.
+**Status:** available from GitHub under the [MIT license](LICENSE), not npm.
+Verified with OpenCode 2.2.5 and OpenTUI 0.8.0. The package is marked private
+to prevent accidental npm publication.
 
 ## Features
 
@@ -143,12 +143,12 @@ Check the package contents without publishing:
 npm pack --dry-run
 ```
 
-## Before an open-source release
+## Before an npm release
 
-- Choose a license and confirm you have the right to publish the source.
+- Confirm you have the right to publish the source.
 - Add screenshots made with synthetic or public data, if desired.
 - Verify the GitHub installation live without loading the old local copy.
 - If publishing to npm, check name availability and remove `private: true`
   only as part of an explicitly authorized release.
 
-No repository, package, or screenshot is published automatically.
+No npm package or screenshot is published automatically.
