@@ -9,6 +9,7 @@ import type { Store } from "solid-js/store"
 import { Glab } from "./glab"
 import { PipelineDialogs } from "./dialogs"
 export { LogDialog } from "./dialogs"
+export { JobDialog } from "./job-dialog"
 import { statusColor, statusIcon, type Pipeline } from "./model"
 import { PipelineStore, type State, type StateBinding } from "./store"
 

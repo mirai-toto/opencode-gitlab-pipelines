@@ -1,15 +1,15 @@
 // @bun
 // src/tui.tsx
-import { createComponent as _$createComponent2 } from "@opentui/solid";
-import { effect as _$effect2 } from "@opentui/solid";
-import { createTextNode as _$createTextNode2 } from "@opentui/solid";
-import { insertNode as _$insertNode2 } from "@opentui/solid";
-import { insert as _$insert2 } from "@opentui/solid";
-import { memo as _$memo } from "@opentui/solid";
-import { setProp as _$setProp2 } from "@opentui/solid";
-import { createElement as _$createElement2 } from "@opentui/solid";
+import { createComponent as _$createComponent3 } from "@opentui/solid";
+import { effect as _$effect3 } from "@opentui/solid";
+import { createTextNode as _$createTextNode3 } from "@opentui/solid";
+import { insertNode as _$insertNode3 } from "@opentui/solid";
+import { insert as _$insert3 } from "@opentui/solid";
+import { memo as _$memo2 } from "@opentui/solid";
+import { setProp as _$setProp3 } from "@opentui/solid";
+import { createElement as _$createElement3 } from "@opentui/solid";
 import { Plugin } from "@opencode/plugin/tui";
-import { createEffect, createMemo, For, on, onCleanup as onCleanup2, Show } from "solid-js";
+import { createEffect, createMemo as createMemo2, For as For2, on, onCleanup as onCleanup3, Show as Show2 } from "solid-js";
 
 // src/glab.ts
 import { spawn } from "child_process";
@@ -102,6 +102,13 @@ function statusColor(status) {
   if (["canceled", "skipped"].includes(status))
     return "#a6a6a6";
   return "#e5c77a";
+}
+function jobColor(job) {
+  if (job.status === "failed" && job.allowFailure)
+    return "#e5c77a";
+  if (job.status === "manual")
+    return "#c8a6ff";
+  return statusColor(job.status);
 }
 
 // src/glab.ts
@@ -239,15 +246,203 @@ async function openBrowser(value, directory, signal) {
 }
 
 // src/dialogs.tsx
+import { createComponent as _$createComponent2 } from "@opentui/solid";
+import { effect as _$effect2 } from "@opentui/solid";
+import { use as _$use } from "@opentui/solid";
+import { createTextNode as _$createTextNode2 } from "@opentui/solid";
+import { insertNode as _$insertNode2 } from "@opentui/solid";
+import { insert as _$insert2 } from "@opentui/solid";
+import { setProp as _$setProp2 } from "@opentui/solid";
+import { createElement as _$createElement2 } from "@opentui/solid";
+import { createSignal as createSignal2, onCleanup as onCleanup2, onMount as onMount2 } from "solid-js";
+
+// src/job-dialog.tsx
+import { memo as _$memo } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
 import { effect as _$effect } from "@opentui/solid";
-import { use as _$use } from "@opentui/solid";
+import { insert as _$insert } from "@opentui/solid";
 import { createTextNode as _$createTextNode } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
-import { insert as _$insert } from "@opentui/solid";
 import { setProp as _$setProp } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+function JobDialog(props) {
+  const [query, setQuery] = createSignal("");
+  const [selected, setSelected] = createSignal(0);
+  const [terminalHeight, setTerminalHeight] = createSignal(props.context.renderer.terminalHeight);
+  const onResize = () => {
+    setTerminalHeight(props.context.renderer.terminalHeight);
+  };
+  const pageSize = createMemo(() => Math.max(2, Math.min(10, Math.floor((terminalHeight() - 10) / 3))));
+  const filtered = createMemo(() => {
+    const needle = query().trim().toLowerCase();
+    return needle ? props.jobs.filter((job) => [job.name, job.stage, job.status, String(job.id)].some((value) => value.toLowerCase().includes(needle))) : props.jobs;
+  });
+  const start = createMemo(() => Math.floor(selected() / pageSize()) * pageSize());
+  const visible = createMemo(() => filtered().slice(start(), start() + pageSize()));
+  const current = () => filtered()[selected()];
+  const move = (distance) => {
+    setSelected((index) => Math.max(0, Math.min(filtered().length - 1, index + distance)));
+  };
+  const browseCurrent = () => {
+    const job = current();
+    return job ? props.browse(job.url) : Promise.resolve();
+  };
+  let opened = false;
+  const choose = (job) => {
+    if (!job || opened)
+      return;
+    opened = true;
+    props.onSelect(job);
+  };
+  props.context.keymap.layer(() => ({
+    mode: "modal",
+    commands: [{
+      bind: "up",
+      run: () => move(-1)
+    }, {
+      bind: "down",
+      run: () => move(1)
+    }, {
+      bind: "pageup",
+      run: () => move(-pageSize())
+    }, {
+      bind: "pagedown",
+      run: () => move(pageSize())
+    }, {
+      bind: "home",
+      run: () => {
+        setSelected(0);
+      }
+    }, {
+      bind: "end",
+      run: () => {
+        setSelected(Math.max(0, filtered().length - 1));
+      }
+    }, {
+      bind: "enter",
+      run: () => choose(current())
+    }, {
+      bind: "ctrl+o",
+      run: browseCurrent
+    }, {
+      bind: "ctrl+b",
+      run: () => props.browse(props.pipeline.url)
+    }]
+  }));
+  onMount(() => {
+    props.context.renderer.on("resize", onResize);
+    props.context.ui.dialog.set({
+      size: "large",
+      centered: true
+    });
+  });
+  onCleanup(() => {
+    props.context.renderer.off("resize", onResize);
+  });
+  return (() => {
+    var _el$ = _$createElement("box"), _el$2 = _$createElement("text"), _el$3 = _$createElement("b"), _el$4 = _$createTextNode(`#`), _el$5 = _$createTextNode(` \xB7 `), _el$6 = _$createTextNode(` \xB7 Jobs`), _el$7 = _$createElement("input"), _el$0 = _$createElement("text"), _el$1 = _$createTextNode(`\u2191\u2193/PgUp/PgDn select \xB7 Enter logs \xB7 Ctrl+O job \xB7 Ctrl+B pipeline \xB7 Esc close`);
+    _$insertNode(_el$, _el$2);
+    _$insertNode(_el$, _el$7);
+    _$insertNode(_el$, _el$0);
+    _$setProp(_el$, "padding", 1);
+    _$setProp(_el$, "gap", 1);
+    _$insertNode(_el$2, _el$3);
+    _$setProp(_el$2, "wrapMode", "none");
+    _$setProp(_el$2, "truncate", true);
+    _$insertNode(_el$3, _el$4);
+    _$insertNode(_el$3, _el$5);
+    _$insertNode(_el$3, _el$6);
+    _$insert(_el$3, () => props.pipeline.id, _el$5);
+    _$insert(_el$3, () => props.pipeline.ref, _el$6);
+    _$setProp(_el$7, "focused", true);
+    _$setProp(_el$7, "placeholder", "Search jobs, stages, or statuses");
+    _$setProp(_el$7, "onInput", (value) => {
+      setQuery(value);
+      setSelected(0);
+    });
+    _$setProp(_el$7, "onSubmit", () => choose(current()));
+    _$insert(_el$, _$createComponent(Show, {
+      get when() {
+        return filtered().length === 0;
+      },
+      get children() {
+        var _el$8 = _$createElement("text");
+        _$insertNode(_el$8, _$createTextNode(`No matching jobs`));
+        _$effect((_$p) => _$setProp(_el$8, "fg", props.context.theme.text.muted, _$p));
+        return _el$8;
+      }
+    }), _el$0);
+    _$insert(_el$, _$createComponent(For, {
+      get each() {
+        return visible();
+      },
+      children: (job, offset) => (() => {
+        var _el$10 = _$createElement("box"), _el$12 = _$createElement("text"), _el$13 = _$createTextNode(` `), _el$14 = _$createElement("text"), _el$15 = _$createTextNode(` \xB7 #`);
+        _$insertNode(_el$10, _el$12);
+        _$insertNode(_el$10, _el$14);
+        _$setProp(_el$10, "onMouseUp", (event) => {
+          if (event.button !== 0)
+            return;
+          event.stopPropagation();
+          choose(job);
+        });
+        _$insert(_el$10, _$createComponent(Show, {
+          get when() {
+            return offset() === 0 || visible()[offset() - 1]?.stage !== job.stage;
+          },
+          get children() {
+            var _el$11 = _$createElement("text");
+            _$insert(_el$11, () => job.stage);
+            _$effect((_$p) => _$setProp(_el$11, "fg", props.context.theme.text.muted, _$p));
+            return _el$11;
+          }
+        }), _el$12);
+        _$insertNode(_el$12, _el$13);
+        _$setProp(_el$12, "wrapMode", "none");
+        _$setProp(_el$12, "truncate", true);
+        _$insert(_el$12, () => selected() === start() + offset() ? "\u276F " : "  ", _el$13);
+        _$insert(_el$12, () => statusIcon(job.status), _el$13);
+        _$insert(_el$12, () => job.name, null);
+        _$insertNode(_el$14, _el$15);
+        _$setProp(_el$14, "wrapMode", "none");
+        _$setProp(_el$14, "truncate", true);
+        _$insert(_el$14, () => job.status, _el$15);
+        _$insert(_el$14, () => job.status === "failed" && job.allowFailure ? " (warning \xB7 allowed to fail)" : "", _el$15);
+        _$insert(_el$14, () => job.id, null);
+        _$effect((_p$) => {
+          var _v$3 = jobColor(job), _v$4 = props.context.theme.text.muted;
+          _v$3 !== _p$.e && (_p$.e = _$setProp(_el$12, "fg", _v$3, _p$.e));
+          _v$4 !== _p$.t && (_p$.t = _$setProp(_el$14, "fg", _v$4, _p$.t));
+          return _p$;
+        }, {
+          e: undefined,
+          t: undefined
+        });
+        return _el$10;
+      })()
+    }), _el$0);
+    _$insertNode(_el$0, _el$1);
+    _$setProp(_el$0, "wrapMode", "none");
+    _$setProp(_el$0, "truncate", true);
+    _$insert(_el$0, (() => {
+      var _c$ = _$memo(() => !!filtered().length);
+      return () => _c$() ? `${selected() + 1}/${filtered().length} \xB7 ` : "";
+    })(), _el$1);
+    _$effect((_p$) => {
+      var _v$ = props.context.theme.text.base, _v$2 = props.context.theme.text.muted;
+      _v$ !== _p$.e && (_p$.e = _$setProp(_el$2, "fg", _v$, _p$.e));
+      _v$2 !== _p$.t && (_p$.t = _$setProp(_el$0, "fg", _v$2, _p$.t));
+      return _p$;
+    }, {
+      e: undefined,
+      t: undefined
+    });
+    return _el$;
+  })();
+}
+
+// src/dialogs.tsx
 function errorMessage(error) {
   return error instanceof Error ? error.message : "Unable to read GitLab data";
 }
@@ -263,13 +458,13 @@ async function browseUrl(context, glab, url) {
   }
 }
 function LogDialog(props) {
-  const [terminalHeight, setTerminalHeight] = createSignal(props.context.renderer.terminalHeight);
+  const [terminalHeight, setTerminalHeight] = createSignal2(props.context.renderer.terminalHeight);
   const onResize = () => {
     setTerminalHeight(props.context.renderer.terminalHeight);
   };
   props.context.renderer.on("resize", onResize);
-  const [text, setText] = createSignal("Loading job trace\u2026");
-  const [note, setNote] = createSignal("");
+  const [text, setText] = createSignal2("Loading job trace\u2026");
+  const [note, setNote] = createSignal2("");
   let request;
   let scroll;
   let previousTrace;
@@ -339,56 +534,56 @@ function LogDialog(props) {
       run: () => scroll?.scrollBy(1, "content")
     }]
   }));
-  onMount(() => {
+  onMount2(() => {
     props.context.ui.dialog.set({
       size: "xlarge",
       centered: true
     });
     refresh();
   });
-  onCleanup(() => {
+  onCleanup2(() => {
     props.context.renderer.off("resize", onResize);
     request?.abort();
   });
   return (() => {
-    var _el$ = _$createElement("box"), _el$2 = _$createElement("text"), _el$3 = _$createElement("b"), _el$4 = _$createTextNode(` \xB7 `), _el$5 = _$createTextNode(` \xB7 #`), _el$6 = _$createElement("scrollbox"), _el$7 = _$createElement("text"), _el$8 = _$createElement("text"), _el$9 = _$createElement("text");
-    _$insertNode(_el$, _el$2);
-    _$insertNode(_el$, _el$6);
-    _$insertNode(_el$, _el$8);
-    _$insertNode(_el$, _el$9);
-    _$setProp(_el$, "padding", 1);
-    _$setProp(_el$, "gap", 1);
-    _$insertNode(_el$2, _el$3);
-    _$insertNode(_el$2, _el$4);
-    _$insertNode(_el$2, _el$5);
-    _$setProp(_el$2, "wrapMode", "none");
-    _$setProp(_el$2, "truncate", true);
-    _$insert(_el$3, () => props.job.name);
-    _$insert(_el$2, () => props.job.status, _el$5);
-    _$insert(_el$2, () => props.job.id, null);
-    _$insertNode(_el$6, _el$7);
+    var _el$ = _$createElement2("box"), _el$2 = _$createElement2("text"), _el$3 = _$createElement2("b"), _el$4 = _$createTextNode2(` \xB7 `), _el$5 = _$createTextNode2(` \xB7 #`), _el$6 = _$createElement2("scrollbox"), _el$7 = _$createElement2("text"), _el$8 = _$createElement2("text"), _el$9 = _$createElement2("text");
+    _$insertNode2(_el$, _el$2);
+    _$insertNode2(_el$, _el$6);
+    _$insertNode2(_el$, _el$8);
+    _$insertNode2(_el$, _el$9);
+    _$setProp2(_el$, "padding", 1);
+    _$setProp2(_el$, "gap", 1);
+    _$insertNode2(_el$2, _el$3);
+    _$insertNode2(_el$2, _el$4);
+    _$insertNode2(_el$2, _el$5);
+    _$setProp2(_el$2, "wrapMode", "none");
+    _$setProp2(_el$2, "truncate", true);
+    _$insert2(_el$3, () => props.job.name);
+    _$insert2(_el$2, () => props.job.status, _el$5);
+    _$insert2(_el$2, () => props.job.id, null);
+    _$insertNode2(_el$6, _el$7);
     _$use((value) => {
       scroll = value;
     }, _el$6);
-    _$setProp(_el$6, "focused", true);
-    _$setProp(_el$6, "scrollY", true);
-    _$setProp(_el$6, "scrollX", true);
-    _$setProp(_el$7, "wrapMode", "none");
-    _$setProp(_el$7, "flexShrink", 0);
-    _$insert(_el$7, text);
-    _$setProp(_el$8, "wrapMode", "none");
-    _$setProp(_el$8, "truncate", true);
-    _$insert(_el$8, note);
-    _$insertNode(_el$9, _$createTextNode(`\u2191\u2193/PgUp/PgDn scroll \xB7 r refresh \xB7 b browser \xB7 Esc close`));
-    _$effect((_p$) => {
+    _$setProp2(_el$6, "focused", true);
+    _$setProp2(_el$6, "scrollY", true);
+    _$setProp2(_el$6, "scrollX", true);
+    _$setProp2(_el$7, "wrapMode", "none");
+    _$setProp2(_el$7, "flexShrink", 0);
+    _$insert2(_el$7, text);
+    _$setProp2(_el$8, "wrapMode", "none");
+    _$setProp2(_el$8, "truncate", true);
+    _$insert2(_el$8, note);
+    _$insertNode2(_el$9, _$createTextNode2(`\u2191\u2193/PgUp/PgDn scroll \xB7 r refresh \xB7 b browser \xB7 Esc close`));
+    _$effect2((_p$) => {
       var _v$ = props.context.theme.text.base, _v$2 = Math.max(3, terminalHeight() - 10), _v$3 = props.context.theme.text.base, _v$4 = text().split(`
 `).length, _v$5 = props.context.theme.text.muted, _v$6 = props.context.theme.text.muted;
-      _v$ !== _p$.e && (_p$.e = _$setProp(_el$2, "fg", _v$, _p$.e));
-      _v$2 !== _p$.t && (_p$.t = _$setProp(_el$6, "height", _v$2, _p$.t));
-      _v$3 !== _p$.a && (_p$.a = _$setProp(_el$7, "fg", _v$3, _p$.a));
-      _v$4 !== _p$.o && (_p$.o = _$setProp(_el$7, "height", _v$4, _p$.o));
-      _v$5 !== _p$.i && (_p$.i = _$setProp(_el$8, "fg", _v$5, _p$.i));
-      _v$6 !== _p$.n && (_p$.n = _$setProp(_el$9, "fg", _v$6, _p$.n));
+      _v$ !== _p$.e && (_p$.e = _$setProp2(_el$2, "fg", _v$, _p$.e));
+      _v$2 !== _p$.t && (_p$.t = _$setProp2(_el$6, "height", _v$2, _p$.t));
+      _v$3 !== _p$.a && (_p$.a = _$setProp2(_el$7, "fg", _v$3, _p$.a));
+      _v$4 !== _p$.o && (_p$.o = _$setProp2(_el$7, "height", _v$4, _p$.o));
+      _v$5 !== _p$.i && (_p$.i = _$setProp2(_el$8, "fg", _v$5, _p$.i));
+      _v$6 !== _p$.n && (_p$.n = _$setProp2(_el$9, "fg", _v$6, _p$.n));
       return _p$;
     }, {
       e: undefined,
@@ -417,12 +612,12 @@ class PipelineDialogs {
     this.context.ui.dialog.show(() => {
       const _self$ = this;
       return (() => {
-        var _el$1 = _$createElement("box"), _el$10 = _$createElement("text"), _el$11 = _$createTextNode(` \xB7 Esc cancels`);
-        _$insertNode(_el$1, _el$10);
-        _$setProp(_el$1, "padding", 1);
-        _$insertNode(_el$10, _el$11);
-        _$insert(_el$10, label, _el$11);
-        _$effect((_$p) => _$setProp(_el$10, "fg", _self$.context.theme.text.base, _$p));
+        var _el$1 = _$createElement2("box"), _el$10 = _$createElement2("text"), _el$11 = _$createTextNode2(` \xB7 Esc cancels`);
+        _$insertNode2(_el$1, _el$10);
+        _$setProp2(_el$1, "padding", 1);
+        _$insertNode2(_el$10, _el$11);
+        _$insert2(_el$10, label, _el$11);
+        _$effect2((_$p) => _$setProp2(_el$10, "fg", _self$.context.theme.text.base, _$p));
         return _el$1;
       })();
     }, () => request.abort());
@@ -489,41 +684,28 @@ class PipelineDialogs {
       });
       return;
     }
-    const job = await this.context.ui.dialog.select({
-      title: `#${pipeline.id} \xB7 ${pipeline.ref} \xB7 Jobs`,
-      options: jobs.map((item) => ({
-        title: `${statusIcon(item.status)} ${item.name}`,
-        description: `${item.status}${item.allowFailure ? " (allowed to fail)" : ""} \xB7 #${item.id}`,
-        category: item.stage,
-        value: item
-      })),
-      actions: [{
-        bind: "ctrl+o",
-        title: "Job in browser",
-        onTrigger: (item) => browseUrl(this.context, glab, item.url)
-      }, {
-        bind: "ctrl+b",
-        title: "Pipeline in browser",
-        selection: "none",
-        onTrigger: () => browseUrl(this.context, glab, pipeline.url)
-      }]
-    });
-    if (!job)
-      return;
     this.context.ui.dialog.show(() => {
       const _self$2 = this;
-      return _$createComponent(LogDialog, {
+      return _$createComponent2(JobDialog, {
         get context() {
           return _self$2.context;
         },
-        glab,
-        job
+        jobs,
+        pipeline,
+        browse: (url) => browseUrl(_self$2.context, glab, url),
+        onSelect: (job) => _self$2.context.ui.dialog.show(() => _$createComponent2(LogDialog, {
+          get context() {
+            return _self$2.context;
+          },
+          glab,
+          job
+        }))
       });
     });
   }
 }
 // src/store.ts
-import { createSignal as createSignal2 } from "solid-js";
+import { createSignal as createSignal3 } from "solid-js";
 class PipelineStore {
   load;
   state;
@@ -540,7 +722,7 @@ class PipelineStore {
       });
       return;
     }
-    const [state, update] = createSignal2({ directory: "", ref: "", pipelines: [], loading: false });
+    const [state, update] = createSignal3({ directory: "", ref: "", pipelines: [], loading: false });
     this.state = state;
     this.update = (value) => {
       update(value);
@@ -595,7 +777,7 @@ function click(event, action) {
 function PipelinePanel(props) {
   const store = props.store ?? new PipelineStore;
   const dialogs = props.dialogs ?? new PipelineDialogs(props.context);
-  const location = createMemo(() => props.context.data.session.get(props.sessionID)?.location ?? props.context.location ?? props.context.data.location.default());
+  const location = createMemo2(() => props.context.data.session.get(props.sessionID)?.location ?? props.context.location ?? props.context.data.location.default());
   const directory = () => location().directory;
   const browse = () => dialogs.browse(new Glab(directory()));
   const refresh = async () => {
@@ -623,108 +805,108 @@ function PipelinePanel(props) {
     if (!props.preferences.collapsed)
       store.refresh();
   }, 120000);
-  onCleanup2(() => {
+  onCleanup3(() => {
     clearInterval(timer);
     store.cancel();
     dialogs.cancel();
   });
   return (() => {
-    var _el$ = _$createElement2("box"), _el$2 = _$createElement2("text"), _el$3 = _$createElement2("b"), _el$4 = _$createTextNode2(` Pipelines`);
-    _$insertNode2(_el$, _el$2);
-    _$insertNode2(_el$2, _el$3);
-    _$setProp2(_el$2, "wrapMode", "none");
-    _$setProp2(_el$2, "truncate", true);
-    _$setProp2(_el$2, "height", 1);
-    _$setProp2(_el$2, "onMouseDown", (event) => click(event, props.toggle));
-    _$insertNode2(_el$3, _el$4);
-    _$insert2(_el$3, () => props.preferences.collapsed ? "\u25B6" : "\u25BC", _el$4);
-    _$insert2(_el$, _$createComponent2(Show, {
+    var _el$ = _$createElement3("box"), _el$2 = _$createElement3("text"), _el$3 = _$createElement3("b"), _el$4 = _$createTextNode3(` Pipelines`);
+    _$insertNode3(_el$, _el$2);
+    _$insertNode3(_el$2, _el$3);
+    _$setProp3(_el$2, "wrapMode", "none");
+    _$setProp3(_el$2, "truncate", true);
+    _$setProp3(_el$2, "height", 1);
+    _$setProp3(_el$2, "onMouseDown", (event) => click(event, props.toggle));
+    _$insertNode3(_el$3, _el$4);
+    _$insert3(_el$3, () => props.preferences.collapsed ? "\u25B6" : "\u25BC", _el$4);
+    _$insert3(_el$, _$createComponent3(Show2, {
       get when() {
         return !props.preferences.collapsed;
       },
       get children() {
         return [(() => {
-          var _el$5 = _$createElement2("text");
-          _$setProp2(_el$5, "wrapMode", "none");
-          _$setProp2(_el$5, "truncate", true);
-          _$setProp2(_el$5, "height", 1);
-          _$insert2(_el$5, () => store.state().ref || "Current branch", null);
-          _$insert2(_el$5, () => store.state().loading ? " \xB7 loading\u2026" : "", null);
-          _$effect2((_$p) => _$setProp2(_el$5, "fg", props.context.theme.text.muted, _$p));
+          var _el$5 = _$createElement3("text");
+          _$setProp3(_el$5, "wrapMode", "none");
+          _$setProp3(_el$5, "truncate", true);
+          _$setProp3(_el$5, "height", 1);
+          _$insert3(_el$5, () => store.state().ref || "Current branch", null);
+          _$insert3(_el$5, () => store.state().loading ? " \xB7 loading\u2026" : "", null);
+          _$effect3((_$p) => _$setProp3(_el$5, "fg", props.context.theme.text.muted, _$p));
           return _el$5;
-        })(), _$createComponent2(Show, {
+        })(), _$createComponent3(Show2, {
           get when() {
             return store.state().error;
           },
           get children() {
-            var _el$6 = _$createElement2("text");
-            _$setProp2(_el$6, "fg", "#ff7b86");
-            _$setProp2(_el$6, "maxHeight", 2);
-            _$insert2(_el$6, () => store.state().error);
+            var _el$6 = _$createElement3("text");
+            _$setProp3(_el$6, "fg", "#ff7b86");
+            _$setProp3(_el$6, "maxHeight", 2);
+            _$insert3(_el$6, () => store.state().error);
             return _el$6;
           }
-        }), _$createComponent2(Show, {
+        }), _$createComponent3(Show2, {
           get when() {
-            return _$memo(() => !!!store.state().error)() && store.state().notice;
+            return _$memo2(() => !!!store.state().error)() && store.state().notice;
           },
           get children() {
-            var _el$7 = _$createElement2("text");
-            _$setProp2(_el$7, "maxHeight", 2);
-            _$insert2(_el$7, () => store.state().notice);
-            _$effect2((_$p) => _$setProp2(_el$7, "fg", props.context.theme.text.muted, _$p));
+            var _el$7 = _$createElement3("text");
+            _$setProp3(_el$7, "maxHeight", 2);
+            _$insert3(_el$7, () => store.state().notice);
+            _$effect3((_$p) => _$setProp3(_el$7, "fg", props.context.theme.text.muted, _$p));
             return _el$7;
           }
-        }), _$createComponent2(Show, {
+        }), _$createComponent3(Show2, {
           get when() {
-            return _$memo(() => !!(!store.state().error && !store.state().notice && !store.state().loading))() && store.state().pipelines.length === 0;
+            return _$memo2(() => !!(!store.state().error && !store.state().notice && !store.state().loading))() && store.state().pipelines.length === 0;
           },
           get children() {
-            var _el$8 = _$createElement2("text"), _el$9 = _$createTextNode2(`No pipelines for `);
-            _$insertNode2(_el$8, _el$9);
-            _$insert2(_el$8, () => store.state().ref || "current branch", null);
-            _$effect2((_$p) => _$setProp2(_el$8, "fg", props.context.theme.text.muted, _$p));
+            var _el$8 = _$createElement3("text"), _el$9 = _$createTextNode3(`No pipelines for `);
+            _$insertNode3(_el$8, _el$9);
+            _$insert3(_el$8, () => store.state().ref || "current branch", null);
+            _$effect3((_$p) => _$setProp3(_el$8, "fg", props.context.theme.text.muted, _$p));
             return _el$8;
           }
-        }), _$createComponent2(For, {
+        }), _$createComponent3(For2, {
           get each() {
-            return _$memo(() => !!store.state().error)() ? [] : store.state().pipelines;
+            return _$memo2(() => !!store.state().error)() ? [] : store.state().pipelines;
           },
           children: (pipeline) => (() => {
-            var _el$12 = _$createElement2("text"), _el$13 = _$createTextNode2(` #`), _el$14 = _$createTextNode2(` \xB7 `);
-            _$insertNode2(_el$12, _el$13);
-            _$insertNode2(_el$12, _el$14);
-            _$setProp2(_el$12, "wrapMode", "none");
-            _$setProp2(_el$12, "truncate", true);
-            _$setProp2(_el$12, "height", 1);
-            _$setProp2(_el$12, "onMouseUp", (event) => click(event, () => {
+            var _el$12 = _$createElement3("text"), _el$13 = _$createTextNode3(` #`), _el$14 = _$createTextNode3(` \xB7 `);
+            _$insertNode3(_el$12, _el$13);
+            _$insertNode3(_el$12, _el$14);
+            _$setProp3(_el$12, "wrapMode", "none");
+            _$setProp3(_el$12, "truncate", true);
+            _$setProp3(_el$12, "height", 1);
+            _$setProp3(_el$12, "onMouseUp", (event) => click(event, () => {
               dialogs.jobs(new Glab(directory()), pipeline);
             }));
-            _$insert2(_el$12, () => statusIcon(pipeline.status), _el$13);
-            _$insert2(_el$12, () => pipeline.id, _el$14);
-            _$insert2(_el$12, () => pipeline.status, null);
-            _$effect2((_$p) => _$setProp2(_el$12, "fg", statusColor(pipeline.status), _$p));
+            _$insert3(_el$12, () => statusIcon(pipeline.status), _el$13);
+            _$insert3(_el$12, () => pipeline.id, _el$14);
+            _$insert3(_el$12, () => pipeline.status, null);
+            _$effect3((_$p) => _$setProp3(_el$12, "fg", statusColor(pipeline.status), _$p));
             return _el$12;
           })()
         }), (() => {
-          var _el$0 = _$createElement2("box"), _el$1 = _$createElement2("text"), _el$10 = _$createElement2("text");
-          _$insertNode2(_el$0, _el$1);
-          _$insertNode2(_el$0, _el$10);
-          _$setProp2(_el$0, "flexDirection", "row");
-          _$setProp2(_el$0, "gap", 2);
-          _$setProp2(_el$1, "height", 1);
-          _$setProp2(_el$1, "wrapMode", "none");
-          _$setProp2(_el$1, "onMouseUp", (event) => click(event, () => {
+          var _el$0 = _$createElement3("box"), _el$1 = _$createElement3("text"), _el$10 = _$createElement3("text");
+          _$insertNode3(_el$0, _el$1);
+          _$insertNode3(_el$0, _el$10);
+          _$setProp3(_el$0, "flexDirection", "row");
+          _$setProp3(_el$0, "gap", 2);
+          _$setProp3(_el$1, "height", 1);
+          _$setProp3(_el$1, "wrapMode", "none");
+          _$setProp3(_el$1, "onMouseUp", (event) => click(event, () => {
             refresh();
           }));
-          _$insert2(_el$1, () => store.state().loading ? "\u21BB Refreshing\u2026" : "\u21BB Refresh");
-          _$insertNode2(_el$10, _$createTextNode2(`Browse`));
-          _$setProp2(_el$10, "onMouseUp", (event) => click(event, () => {
+          _$insert3(_el$1, () => store.state().loading ? "\u21BB Refreshing\u2026" : "\u21BB Refresh");
+          _$insertNode3(_el$10, _$createTextNode3(`Browse`));
+          _$setProp3(_el$10, "onMouseUp", (event) => click(event, () => {
             browse();
           }));
-          _$effect2((_p$) => {
+          _$effect3((_p$) => {
             var _v$ = props.context.theme.text.muted, _v$2 = props.context.theme.text.muted;
-            _v$ !== _p$.e && (_p$.e = _$setProp2(_el$1, "fg", _v$, _p$.e));
-            _v$2 !== _p$.t && (_p$.t = _$setProp2(_el$10, "fg", _v$2, _p$.t));
+            _v$ !== _p$.e && (_p$.e = _$setProp3(_el$1, "fg", _v$, _p$.e));
+            _v$2 !== _p$.t && (_p$.t = _$setProp3(_el$10, "fg", _v$2, _p$.t));
             return _p$;
           }, {
             e: undefined,
@@ -734,7 +916,7 @@ function PipelinePanel(props) {
         })()];
       }
     }), null);
-    _$effect2((_$p) => _$setProp2(_el$2, "fg", props.context.theme.text.base, _$p));
+    _$effect3((_$p) => _$setProp3(_el$2, "fg", props.context.theme.text.base, _$p));
     return _el$;
   })();
 }
@@ -800,7 +982,7 @@ var tui_default = Plugin.define({
     }));
     const unregister = context.ui.slot({
       prepend: "sidebar.content",
-      render: (props) => _$createComponent2(PipelinePanel, {
+      render: (props) => _$createComponent3(PipelinePanel, {
         context,
         get sessionID() {
           return props.sessionID;
@@ -819,6 +1001,7 @@ var tui_default = Plugin.define({
   }
 });
 export {
+  JobDialog,
   LogDialog,
   PipelinePanel,
   tui_default as default

@@ -105,3 +105,9 @@ export function statusColor(status: string): string {
   if (["canceled", "skipped"].includes(status)) return "#a6a6a6"
   return "#e5c77a"
 }
+
+export function jobColor(job: Job): string {
+  if (job.status === "failed" && job.allowFailure) return "#e5c77a"
+  if (job.status === "manual") return "#c8a6ff"
+  return statusColor(job.status)
+}

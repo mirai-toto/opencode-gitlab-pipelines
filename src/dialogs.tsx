@@ -4,6 +4,7 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import { createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
 import { Glab, openBrowser } from "./glab"
+import { JobDialog } from "./job-dialog"
 import { statusIcon, type Job, type Pipeline, type Trace } from "./model"
 
 export function errorMessage(error: unknown): string {
@@ -155,19 +156,8 @@ export class PipelineDialogs {
       await this.context.ui.dialog.alert({ title: "Pipelines", message: "No regular jobs in this pipeline. Child pipelines can be viewed in the browser." })
       return
     }
-    const job: Job | undefined = await this.context.ui.dialog.select<Job>({
-      title: `#${pipeline.id} · ${pipeline.ref} · Jobs`,
-      options: jobs.map((item: Job) => ({
-        title: `${statusIcon(item.status)} ${item.name}`,
-        description: `${item.status}${item.allowFailure ? " (allowed to fail)" : ""} · #${item.id}`,
-        category: item.stage, value: item,
-      })),
-      actions: [
-        { bind: "ctrl+o", title: "Job in browser", onTrigger: (item: Job): Promise<void> => browseUrl(this.context, glab, item.url) },
-        { bind: "ctrl+b", title: "Pipeline in browser", selection: "none", onTrigger: (): Promise<void> => browseUrl(this.context, glab, pipeline.url) },
-      ],
-    })
-    if (!job) return
-    this.context.ui.dialog.show((): JSX.Element => <LogDialog context={this.context} glab={glab} job={job} />)
+    this.context.ui.dialog.show((): JSX.Element => <JobDialog context={this.context} jobs={jobs} pipeline={pipeline}
+      browse={(url: string): Promise<void> => browseUrl(this.context, glab, url)}
+      onSelect={(job: Job): void => this.context.ui.dialog.show((): JSX.Element => <LogDialog context={this.context} glab={glab} job={job} />)} />)
   }
 }

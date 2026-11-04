@@ -10,7 +10,8 @@ import { onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Glab, openBrowser, runCommand, type CommandOptions, type CommandOutput, type Runner } from "../src/glab"
 import { browseUrl, LogDialog, PipelineDialogs } from "../src/dialogs"
-import { cleanText, parseJobs, parsePipelines, statusIcon, type Job, type Pipeline, type Snapshot } from "../src/model"
+import { JobDialog } from "../src/job-dialog"
+import { cleanText, jobColor, parseJobs, parsePipelines, statusIcon, type Job, type Pipeline, type Snapshot } from "../src/model"
 import { PipelineStore, type State, type StateBinding } from "../src/store"
 import plugin, { PipelinePanel, type PanelPreferences } from "../src/tui"
 
@@ -27,6 +28,11 @@ assert.equal(parseJobs(JSON.stringify(jobData))[0].allowFailure, true)
 assert.equal(statusIcon("success"), "✓")
 assert.equal(statusIcon("manual"), "▷")
 assert.equal(statusIcon("unknown-status"), "○")
+assert.equal(jobColor({ ...parseJobs(JSON.stringify(jobData))[0] }), "#e5c77a")
+assert.equal(jobColor({ ...parseJobs(JSON.stringify(jobData))[0], status: "manual" }), "#c8a6ff")
+assert.equal(jobColor({ ...parseJobs(JSON.stringify(jobData))[0], status: "skipped" }), "#a6a6a6")
+assert.equal(jobColor({ ...parseJobs(JSON.stringify(jobData))[0], status: "success" }), "#82d992")
+assert.equal(jobColor({ ...parseJobs(JSON.stringify(jobData))[0], allowFailure: false }), "#ff7b86")
 assert.throws(() => parsePipelines("{}"))
 assert.throws(() => parseJobs(JSON.stringify([{ ...jobData[0], id: "202" }])))
 assert.throws(() => parsePipelines(JSON.stringify([{ ...pipelineData[0], web_url: "javascript:alert(1)" }])))
@@ -140,8 +146,9 @@ let logRender: (() => JSX.Element) | undefined
 let dialogSettings: DialogOptions = {}
 const layers: KeymapLayer[] = []
 const toasts: ToastOptions[] = []
+const pickerRenderer: EventEmitter & { height: number; terminalHeight: number } = Object.assign(new EventEmitter(), { height: 30, terminalHeight: 40 })
 const context: Plugin.Context = {
-  renderer: { height: 30 },
+  renderer: pickerRenderer,
   theme: { text: { base: "#ffffff", muted: "#aaaaaa" } },
   data: { session: { get: (): { location: { directory: string } } => ({ location: { directory: "/test/project" } }) } },
   keymap: { layer: (factory: () => KeymapLayer): void => { layers.push(factory()) } },
@@ -155,22 +162,69 @@ const context: Plugin.Context = {
       selectionCount++
       assert.equal(dialogSettings.size, undefined) // Selectors keep the default compact size.
       assert.ok(options.actions?.some((action): boolean => action.bind === "ctrl+o"))
-      if (selectionCount === 2) assert.ok(options.actions?.some((action): boolean => action.bind === "ctrl+b" && action.selection === "none"))
       return options.options[0]?.value
     },
   } },
 } as unknown as Plugin.Context
 const dialogs: PipelineDialogs = new PipelineDialogs(context)
 await dialogs.browse(glab)
-assert.equal(selectionCount, 2)
+assert.equal(selectionCount, 1)
 assert.ok(logRender)
+const pickerRender: () => JSX.Element = logRender
+const picker: TestRendererSetup = await testRender(pickerRender, { width: 100, height: 40 })
+try {
+  await picker.waitForFrame((frame: string): boolean => frame.includes("✓ build") && frame.includes("✗ test"))
+  assert.equal(dialogSettings.size, "large")
+  const success: ReturnType<TestRendererSetup["captureSpans"]>["lines"][number]["spans"][number] | undefined =
+    picker.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("✓ build"))
+  const warning: typeof success = picker.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("✗ test"))
+  assert.deepEqual(success?.fg.toInts().slice(0, 3), [130, 217, 146])
+  assert.deepEqual(warning?.fg.toInts().slice(0, 3), [229, 199, 122])
+  await picker.mockInput.typeText("test")
+  await picker.waitForFrame((frame: string): boolean => frame.includes("✗ test") && !frame.includes("✓ build"))
+  const choose: KeymapLayer | undefined = layers.at(-1)
+  assert.equal(choose?.mode, "modal")
+  await choose?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
+  assert.notEqual(logRender, pickerRender) // Selecting a job replaces the picker with the log dialog.
+} finally {
+  await picker.dispose()
+}
+assert.equal(pickerRenderer.listenerCount("resize"), 0)
 const pendingJobs: PromiseWithResolvers<CommandOutput> = Promise.withResolvers<CommandOutput>()
 const cancelGlab: Glab = new Glab("/test", (): Promise<CommandOutput> => pendingJobs.promise)
 const pendingDialog: Promise<void> = dialogs.jobs(cancelGlab, snapshot.pipelines[0])
 loadingClose?.()
 pendingJobs.resolve({ text: JSON.stringify(jobData), truncated: false })
 await pendingDialog
-assert.equal(selectionCount, 2)
+assert.equal(selectionCount, 1)
+
+let browsed: string | undefined
+let selectedJob: Job | undefined
+const colored: TestRendererSetup = await testRender(
+  (): JSX.Element => <JobDialog context={context} jobs={parseJobs(JSON.stringify(jobData)).sort((a: Job, b: Job): number => a.id - b.id)} pipeline={snapshot.pipelines[0]}
+    browse={async (url: string): Promise<void> => { browsed = url }} onSelect={(job: Job): void => { selectedJob = job }} />,
+  { width: 100, height: 40 },
+)
+try {
+  const jobLayer: KeymapLayer | undefined = layers.at(-1)
+  await jobLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "down")?.run()
+  await colored.waitForFrame((frame: string): boolean => frame.includes("❯ ✗ test"))
+  pickerRenderer.terminalHeight = 16
+  pickerRenderer.emit("resize")
+  await colored.waitForFrame((frame: string): boolean => frame.includes("❯ ✗ test") && frame.includes("2/2"))
+  const jobRow: number = colored.captureCharFrame().split("\n").findIndex((line: string): boolean => line.includes("✗ test"))
+  await colored.mockMouse.click(4, jobRow)
+  assert.equal(selectedJob?.id, 202)
+  await jobLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "ctrl+o")?.run()
+  assert.equal(browsed, jobData[0].web_url)
+  await jobLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "ctrl+b")?.run()
+  assert.equal(browsed, snapshot.pipelines[0].url)
+  await jobLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
+  assert.equal(selectedJob?.id, 202)
+} finally {
+  await colored.dispose()
+}
+assert.equal(pickerRenderer.listenerCount("resize"), 0)
 
 const [preferences, setPreferences]: [Store<PanelPreferences>, SetStoreFunction<PanelPreferences>] = createStore<PanelPreferences>({ collapsed: false })
 const [sidebarState, setSidebarState]: [Store<State>, SetStoreFunction<State>] = createStore<State>({ directory: "", ref: "", pipelines: [], loading: false })
@@ -361,7 +415,7 @@ try {
 assert.equal(logLayer, undefined)
 assert.equal(logRenderer.listenerCount("resize"), 0)
 assert.equal(await logKey("b"), false)
-console.log("Pipelines checks passed: parsing, GET-only commands, pagination, bounded logs, aborts, stale-request isolation, dialogs, sidebar mouse/rendering, and modal log scrolling/browser/refresh feedback.")
+console.log("Pipelines checks passed: parsing, GET-only commands, pagination, bounded logs, aborts, stale-request isolation, colored/searchable job picker, sidebar mouse/rendering, and modal log scrolling/browser/refresh feedback.")
 
 // Optional read-only smoke check. Print counts only, never job logs or credentials.
 if (process.argv[2] === "--live" && process.argv[3]) {
