@@ -10,7 +10,8 @@ to prevent accidental npm publication.
 ## Features
 
 - A collapsible sidebar showing the current branch's five latest pipelines.
-- Searchable pipeline and job selectors, with jobs grouped by stage.
+- Searchable pipeline and job selectors, with jobs grouped by stage and colored by status.
+- Trigger jobs open downstream pipelines in the picker, recursively and across projects.
 - Larger, terminal-responsive log dialogs with selectable text.
 - Browser links for pipelines and jobs.
 - Refresh every **2 minutes** while the sidebar is visible and expanded.
@@ -73,6 +74,8 @@ automatically; use `/reload` if needed.
 | Selectors | Search, **↑/↓**, **Enter** to select, **Esc** to close |
 | Selectors | **Ctrl+O** opens the selected item in the browser |
 | Job selector | **Ctrl+B** opens its pipeline in the browser |
+| Job selector | **Enter** opens a regular job's log or a trigger's downstream jobs |
+| Downstream jobs | **Alt+←** returns to the parent pipeline |
 | Logs | **↑/↓**, **Page Up/Down**, **Home/End** navigate |
 | Logs | **←/→** scroll horizontally when content overflows |
 | Logs | **r** refreshes; completion reports unchanged logs |
@@ -96,8 +99,9 @@ updated job statuses. Browser links use the default Windows browser under WSL,
   last **256 KiB / 2,000 lines**; large metadata responses are rejected.
 - Logs can themselves contain sensitive job output. Select and copy carefully;
   don't include real traces or credentials in public bug reports.
-- Regular jobs are paginated. Child-pipeline trigger/bridge navigation is not
-  implemented; use the pipeline browser link.
+- Regular and trigger jobs are paginated. Triggers without a downstream pipeline
+  open their job page in the browser; no pipeline is triggered by the plugin.
+- Downstream jobs in another project require `glab` access to that project.
 - A remote OpenCode server still requires its checkout at an accessible local
   path on the TUI machine.
 - Browser launch on native Windows and macOS is implemented but has not been
@@ -130,10 +134,11 @@ Optional live read-only checks print counts, never traces or credentials:
 npm test -- --live /path/to/gitlab/checkout
 ```
 
-Tests cover parsing, GET-only command construction, pagination, output limits,
-subprocess cancellation, stale-response isolation, sidebar refresh from an empty
-state, mouse actions, terminal resizing, native navigation events, and modal log
-browser/refresh actions. Browser launching uses a stub. The mode-aware harness
+Tests cover parsing, GET-only command construction, pagination, recursive
+cross-project trigger navigation, output limits, subprocess cancellation,
+stale-response isolation, sidebar refresh from an empty state, mouse actions,
+terminal resizing, native navigation events, and modal log browser/refresh
+actions. Browser launching uses a stub. The mode-aware harness
 does not run the full OpenCode dialog/keymap host; also verify behavior live
 before releasing.
 
