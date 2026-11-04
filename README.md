@@ -143,6 +143,9 @@ Check the package contents without publishing:
 npm pack --dry-run
 ```
 
+Keep `tsconfig.json` in the package: its `jsxImportSource` selects OpenTUI's
+Solid renderer when OpenCode loads the published TSX files.
+
 ## Before an npm release
 
 - Confirm you have the right to publish the source.

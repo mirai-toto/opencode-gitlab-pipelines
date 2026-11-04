@@ -9,7 +9,7 @@
   "exports": {
     "./tui": "./src/tui.tsx"
   },
-  "files": ["src"],
+  "files": ["src", "tsconfig.json"],
   "keywords": ["opencode", "gitlab", "pipelines", "tui"],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
