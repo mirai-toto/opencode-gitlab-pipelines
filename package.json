@@ -13,11 +13,11 @@
   "keywords": ["opencode", "gitlab", "pipelines", "tui"],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "build": "BUN_BE_BUN=1 opencode scripts/build.ts",
+    "build:tui": "BUN_BE_BUN=1 opencode scripts/build.ts",
     "test": "bash scripts/test.sh",
     "test:package": "bash scripts/test-package.sh",
     "test:runtime": "bash scripts/test-runtime.sh",
-    "check": "npm run typecheck && npm test && npm run build && npm run test:package"
+    "check": "npm run typecheck && npm test && npm run build:tui && npm run test:package"
   },
   "peerDependencies": {
     "@opencode/plugin": ">=2.2.5 <3",

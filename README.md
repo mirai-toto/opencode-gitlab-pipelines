@@ -143,7 +143,7 @@ Check the package contents without publishing:
 npm pack --dry-run
 ```
 
-Run `npm run build` before committing source changes. The published TUI entrypoint
+Run `npm run build:tui` before committing source changes. The published TUI entrypoint
 is precompiled in `dist/` with OpenTUI's Solid transform and external runtime
 imports; raw TSX inside an installed package may use the wrong JSX transform or
 a separate renderer context. `npm run check` also renders the packed job dialog
