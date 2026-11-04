@@ -91,7 +91,14 @@ function parseBridges(raw) {
       allowFailure: item.allow_failure === true,
       url: webUrl(item.web_url),
       trigger: true,
-      ...downstream ? { downstream: { id: id(downstream.id), status: text(downstream.status), url: webUrl(downstream.web_url) } } : {}
+      ...downstream ? { downstream: {
+        id: id(downstream.id),
+        projectID: id(downstream.project_id),
+        status: text(downstream.status),
+        ref: text(downstream.ref),
+        sha: text(downstream.sha),
+        url: webUrl(downstream.web_url)
+      } } : {}
     };
   });
 }
@@ -222,12 +229,15 @@ class Glab {
     const root = (await this.run("git", ["rev-parse", "--show-toplevel"], { directory: this.directory, signal })).text.trim();
     return !existsSync(join(root, ".gitlab-ci.yml"));
   }
-  async jobs(pipelineID, signal) {
+  async jobs(pipelineID, signal, projectID) {
     this.checkID(pipelineID);
+    if (projectID !== undefined)
+      this.checkID(projectID);
+    const project = projectID === undefined ? ":id" : String(projectID);
     const [jobs, bridges] = await Promise.all([
       this.run("glab", [
         "api",
-        `projects/:id/pipelines/${pipelineID}/jobs?per_page=100`,
+        `projects/${project}/pipelines/${pipelineID}/jobs?per_page=100`,
         "--method",
         "GET",
         "--paginate",
@@ -236,7 +246,7 @@ class Glab {
       ], { directory: this.directory, signal }),
       this.run("glab", [
         "api",
-        `projects/:id/pipelines/${pipelineID}/bridges?per_page=100`,
+        `projects/${project}/pipelines/${pipelineID}/bridges?per_page=100`,
         "--method",
         "GET",
         "--paginate",
@@ -244,13 +254,15 @@ class Glab {
         "json"
       ], { directory: this.directory, signal })
     ]);
-    return [...parseJobs(jobs.text), ...parseBridges(bridges.text)].sort((left, right) => left.id - right.id);
+    return [...parseJobs(jobs.text), ...parseBridges(bridges.text)].map((job) => projectID === undefined ? job : { ...job, projectID }).sort((left, right) => left.id - right.id);
   }
-  async trace(jobID, signal) {
+  async trace(jobID, signal, projectID) {
     this.checkID(jobID);
+    if (projectID !== undefined)
+      this.checkID(projectID);
     const output = await this.run("glab", [
       "api",
-      `projects/:id/jobs/${jobID}/trace`,
+      `projects/${projectID ?? ":id"}/jobs/${jobID}/trace`,
       "--method",
       "GET"
     ], { directory: this.directory, signal, tail: true });
@@ -284,9 +296,9 @@ import { createElement as _$createElement2 } from "@opentui/solid";
 import { createSignal as createSignal2, onCleanup as onCleanup2, onMount as onMount2 } from "solid-js";
 
 // src/job-dialog.tsx
-import { memo as _$memo } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
 import { effect as _$effect } from "@opentui/solid";
+import { memo as _$memo } from "@opentui/solid";
 import { insert as _$insert } from "@opentui/solid";
 import { createTextNode as _$createTextNode } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
@@ -320,8 +332,10 @@ function JobDialog(props) {
     if (!job || opened)
       return;
     if (job.trigger) {
-      props.browse(job.downstream?.url ?? job.url);
-      return;
+      if (!job.downstream) {
+        props.browse(job.url);
+        return;
+      }
     }
     opened = true;
     props.onSelect(job);
@@ -359,7 +373,10 @@ function JobDialog(props) {
     }, {
       bind: "ctrl+b",
       run: () => props.browse(props.pipeline.url)
-    }]
+    }, ...props.onBack ? [{
+      bind: "alt+left",
+      run: props.onBack
+    }] : []]
   }));
   onMount(() => {
     props.context.renderer.on("resize", onResize);
@@ -372,10 +389,10 @@ function JobDialog(props) {
     props.context.renderer.off("resize", onResize);
   });
   return (() => {
-    var _el$ = _$createElement("box"), _el$2 = _$createElement("text"), _el$3 = _$createElement("b"), _el$4 = _$createTextNode(`#`), _el$5 = _$createTextNode(` \xB7 `), _el$6 = _$createTextNode(` \xB7 Jobs`), _el$7 = _$createElement("input"), _el$0 = _$createElement("text"), _el$1 = _$createTextNode(`\u2191\u2193/PgUp/PgDn select \xB7 Enter logs/trigger browser \xB7 Ctrl+O job \xB7 Ctrl+B pipeline \xB7 Esc close`);
+    var _el$ = _$createElement("box"), _el$2 = _$createElement("text"), _el$3 = _$createElement("b"), _el$4 = _$createTextNode(`#`), _el$5 = _$createTextNode(` \xB7 `), _el$6 = _$createTextNode(` \xB7 Jobs`), _el$7 = _$createElement("input"), _el$9 = _$createElement("text"), _el$0 = _$createTextNode(`\u2191\u2193/Pg keys \xB7 Enter open \xB7 Ctrl+O job \xB7 Ctrl+B pipeline`), _el$1 = _$createTextNode(` \xB7 Esc close`);
     _$insertNode(_el$, _el$2);
     _$insertNode(_el$, _el$7);
-    _$insertNode(_el$, _el$0);
+    _$insertNode(_el$, _el$9);
     _$setProp(_el$, "padding", 1);
     _$setProp(_el$, "gap", 1);
     _$insertNode(_el$2, _el$3);
@@ -399,11 +416,11 @@ function JobDialog(props) {
       },
       get children() {
         var _el$8 = _$createElement("text");
-        _$insertNode(_el$8, _$createTextNode(`No matching jobs`));
+        _$insert(_el$8, () => props.jobs.length ? "No matching jobs" : "No jobs or triggers in this pipeline");
         _$effect((_$p) => _$setProp(_el$8, "fg", props.context.theme.text.muted, _$p));
         return _el$8;
       }
-    }), _el$0);
+    }), _el$9);
     _$insert(_el$, _$createComponent(For, {
       get each() {
         return visible();
@@ -456,18 +473,20 @@ function JobDialog(props) {
         });
         return _el$10;
       })()
-    }), _el$0);
-    _$insertNode(_el$0, _el$1);
-    _$setProp(_el$0, "wrapMode", "none");
-    _$setProp(_el$0, "truncate", true);
-    _$insert(_el$0, (() => {
+    }), _el$9);
+    _$insertNode(_el$9, _el$0);
+    _$insertNode(_el$9, _el$1);
+    _$setProp(_el$9, "wrapMode", "none");
+    _$setProp(_el$9, "truncate", true);
+    _$insert(_el$9, (() => {
       var _c$ = _$memo(() => !!filtered().length);
       return () => _c$() ? `${selected() + 1}/${filtered().length} \xB7 ` : "";
-    })(), _el$1);
+    })(), _el$0);
+    _$insert(_el$9, () => props.onBack ? " \xB7 Alt+\u2190 back" : "", _el$1);
     _$effect((_p$) => {
       var _v$ = props.context.theme.text.base, _v$2 = props.context.theme.text.muted;
       _v$ !== _p$.e && (_p$.e = _$setProp(_el$2, "fg", _v$, _p$.e));
-      _v$2 !== _p$.t && (_p$.t = _$setProp(_el$0, "fg", _v$2, _p$.t));
+      _v$2 !== _p$.t && (_p$.t = _$setProp(_el$9, "fg", _v$2, _p$.t));
       return _p$;
     }, {
       e: undefined,
@@ -509,7 +528,7 @@ function LogDialog(props) {
     request = current;
     setNote("Loading\u2026");
     try {
-      const trace = await props.glab.trace(props.job.id, current.signal);
+      const trace = await props.glab.trace(props.job.id, current.signal, props.job.projectID);
       if (current.signal.aborted)
         return;
       const unchanged = previousTrace === trace.text;
@@ -708,17 +727,20 @@ class PipelineDialogs {
     if (pipeline)
       await this.jobs(glab, pipeline);
   }
-  async jobs(glab, pipeline) {
-    const jobs = await this.loading(`Loading jobs for #${pipeline.id}\u2026`, (signal) => glab.jobs(pipeline.id, signal));
+  async jobs(glab, pipeline, parent) {
+    const jobs = await this.loading(`Loading jobs for #${pipeline.id}\u2026`, (signal) => glab.jobs(pipeline.id, signal, pipeline.projectID));
     if (!jobs)
       return;
-    if (jobs.length === 0) {
+    if (jobs.length === 0 && !parent) {
       await this.context.ui.dialog.alert({
         title: "Pipelines",
         message: "No jobs or triggers in this pipeline."
       });
       return;
     }
+    this.showJobs(glab, pipeline, jobs, parent);
+  }
+  showJobs(glab, pipeline, jobs, parent) {
     this.context.ui.dialog.show(() => {
       const _self$2 = this;
       return _$createComponent2(JobDialog, {
@@ -728,13 +750,24 @@ class PipelineDialogs {
         jobs,
         pipeline,
         browse: (url) => browseUrl(_self$2.context, glab, url),
-        onSelect: (job) => _self$2.context.ui.dialog.show(() => _$createComponent2(LogDialog, {
-          get context() {
-            return _self$2.context;
-          },
-          glab,
-          job
-        }))
+        onBack: parent ? () => _self$2.showJobs(glab, parent.pipeline, parent.jobs, parent.parent) : undefined,
+        onSelect: (job) => {
+          if (job.downstream) {
+            _self$2.jobs(glab, job.downstream, {
+              pipeline,
+              jobs,
+              parent
+            });
+            return;
+          }
+          _self$2.context.ui.dialog.show(() => _$createComponent2(LogDialog, {
+            get context() {
+              return _self$2.context;
+            },
+            glab,
+            job
+          }));
+        }
       });
     });
   }

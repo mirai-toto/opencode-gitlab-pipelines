@@ -10,6 +10,7 @@ export function JobDialog(props: {
   jobs: Job[]
   pipeline: Pipeline
   onSelect: (job: Job) => void
+  onBack?: () => void
   browse: (url: string) => Promise<void>
 }): JSX.Element {
   const [query, setQuery]: [Accessor<string>, Setter<string>] = createSignal("")
@@ -37,8 +38,10 @@ export function JobDialog(props: {
   const choose: (job: Job | undefined) => void = (job: Job | undefined): void => {
     if (!job || opened) return
     if (job.trigger) {
-      void props.browse(job.downstream?.url ?? job.url)
-      return
+      if (!job.downstream) {
+        void props.browse(job.url)
+        return
+      }
     }
     opened = true
     props.onSelect(job)
@@ -55,6 +58,7 @@ export function JobDialog(props: {
       { bind: "enter", run: (): void => choose(current()) },
       { bind: "ctrl+o", run: browseCurrent },
       { bind: "ctrl+b", run: (): Promise<void> => props.browse(props.pipeline.url) },
+      ...(props.onBack ? [{ bind: "alt+left", run: props.onBack }] : []),
     ],
   }))
   onMount((): void => {
@@ -70,7 +74,7 @@ export function JobDialog(props: {
       <input focused placeholder="Search jobs, stages, or statuses" onInput={(value: string): void => { setQuery(value); setSelected(0) }}
         onSubmit={(): void => choose(current())} />
       <Show when={filtered().length === 0}>
-        <text fg={props.context.theme.text.muted}>No matching jobs</text>
+        <text fg={props.context.theme.text.muted}>{props.jobs.length ? "No matching jobs" : "No jobs or triggers in this pipeline"}</text>
       </Show>
       <For each={visible()}>{(job: Job, offset: Accessor<number>): JSX.Element => (
         <box onMouseUp={(event: MouseEvent): void => {
@@ -91,7 +95,7 @@ export function JobDialog(props: {
         </box>
       )}</For>
       <text fg={props.context.theme.text.muted} wrapMode="none" truncate>
-        {filtered().length ? `${selected() + 1}/${filtered().length} · ` : ""}↑↓/PgUp/PgDn select · Enter logs/trigger browser · Ctrl+O job · Ctrl+B pipeline · Esc close
+        {filtered().length ? `${selected() + 1}/${filtered().length} · ` : ""}↑↓/Pg keys · Enter open · Ctrl+O job · Ctrl+B pipeline{props.onBack ? " · Alt+← back" : ""} · Esc close
       </text>
     </box>
   )

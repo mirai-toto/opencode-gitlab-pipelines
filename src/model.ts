@@ -1,5 +1,6 @@
 export interface Pipeline {
   id: number
+  projectID?: number
   status: string
   ref: string
   sha: string
@@ -8,13 +9,14 @@ export interface Pipeline {
 
 export interface Job {
   id: number
+  projectID?: number
   name: string
   stage: string
   status: string
   allowFailure: boolean
   url: string
   trigger?: boolean
-  downstream?: { id: number; status: string; url: string }
+  downstream?: Pipeline
 }
 
 export interface Snapshot {
@@ -99,7 +101,10 @@ export function parseBridges(raw: string): Job[] {
       id: id(item.id), name: text(item.name), stage: text(item.stage),
       status: text(item.status), allowFailure: item.allow_failure === true,
       url: webUrl(item.web_url), trigger: true,
-      ...(downstream ? { downstream: { id: id(downstream.id), status: text(downstream.status), url: webUrl(downstream.web_url) } } : {}),
+      ...(downstream ? { downstream: {
+        id: id(downstream.id), projectID: id(downstream.project_id), status: text(downstream.status),
+        ref: text(downstream.ref), sha: text(downstream.sha), url: webUrl(downstream.web_url),
+      } } : {}),
     }
   })
 }

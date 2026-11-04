@@ -26,13 +26,15 @@ const jobData: Record<string, unknown>[] = [
 const bridgeData: Record<string, unknown>[] = [
   { id: 203, name: "trigger tests", stage: "test", status: "success", allow_failure: false,
     web_url: "https://gitlab.example/test/project/-/jobs/203",
-    downstream_pipeline: { id: 102, status: "success", web_url: "https://gitlab.example/other/project/-/pipelines/102" } },
+    downstream_pipeline: { id: 102, project_id: 300, status: "success", ref: "main", sha: "abc12345",
+      web_url: "https://gitlab.example/other/project/-/pipelines/102" } },
   { id: 204, name: "manual trigger", stage: "deploy", status: "manual", allow_failure: false,
     web_url: "https://gitlab.example/test/project/-/jobs/204", downstream_pipeline: null },
 ]
 const snapshot: Snapshot = { ref: "feature/test", pipelines: parsePipelines(JSON.stringify(pipelineData)) }
 assert.equal(parseJobs(JSON.stringify(jobData))[0].allowFailure, true)
 assert.equal(parseBridges(JSON.stringify(bridgeData))[0].downstream?.id, 102)
+assert.equal(parseBridges(JSON.stringify(bridgeData))[0].downstream?.projectID, 300)
 assert.equal(parseBridges(JSON.stringify(bridgeData))[1].downstream, undefined)
 assert.throws(() => parseBridges(JSON.stringify([{ ...bridgeData[0], downstream_pipeline: { id: "102" } }])))
 assert.equal(statusIcon("success"), "✓")
@@ -97,6 +99,11 @@ const bridgeOnly: Glab = new Glab("/test", async (_program: string, args: readon
   text: args[1].includes("/bridges") ? JSON.stringify(bridgeData) : "[]", truncated: false,
 }))
 assert.deepEqual((await bridgeOnly.jobs(101, signal)).map((job: Job): number => job.id), [203, 204])
+const downstreamJobs: Job[] = await glab.jobs(102, signal, 300)
+assert.equal(downstreamJobs[0].projectID, 300)
+assert.ok(calls.slice(-2).every((call): boolean => call.args[1].startsWith("projects/300/pipelines/102/")))
+await glab.trace(201, signal, 300)
+assert.equal(calls.at(-1)?.args[1], "projects/300/jobs/201/trace")
 const trace: Awaited<ReturnType<Glab["trace"]>> = await glab.trace(202, signal)
 assert.equal(trace.truncated, true)
 assert.equal(trace.text.split("\n").length, 2000)
@@ -255,14 +262,69 @@ try {
   await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "ctrl+o")?.run()
   assert.equal(triggerUrl, bridgeData[0].web_url)
   await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
-  assert.equal(triggerUrl, parseBridges(JSON.stringify(bridgeData))[0].downstream?.url)
-  assert.equal(triggeredLog, undefined)
-  await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "down")?.run()
-  await triggerLayer?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
-  assert.equal(triggerUrl, bridgeData[1].web_url)
-  assert.equal(triggeredLog, undefined)
+  assert.equal(triggeredLog?.downstream?.id, 102)
 } finally {
   await triggers.dispose()
+}
+assert.equal(pickerRenderer.listenerCount("resize"), 0)
+const manualTrigger: TestRendererSetup = await testRender(
+  (): JSX.Element => <JobDialog context={context} jobs={[parseBridges(JSON.stringify(bridgeData))[1]]} pipeline={snapshot.pipelines[0]}
+    browse={async (url: string): Promise<void> => { triggerUrl = url }} onSelect={(job: Job): void => { triggeredLog = job }} />,
+  { width: 100, height: 40 },
+)
+try {
+  await manualTrigger.waitForFrame((frame: string): boolean => frame.includes("manual trigger"))
+  await layers.at(-1)?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
+  assert.equal(triggerUrl, bridgeData[1].web_url)
+  assert.equal(triggeredLog?.id, 203)
+} finally {
+  await manualTrigger.dispose()
+}
+assert.equal(pickerRenderer.listenerCount("resize"), 0)
+
+const nestedCalls: string[] = []
+const nestedGlab: Glab = new Glab("/test", async (_program: string, args: readonly string[]): Promise<CommandOutput> => {
+  const path: string = args[1]
+  nestedCalls.push(path)
+  const nestedBridge: Record<string, unknown> = {
+    ...bridgeData[0], id: 205, name: "another trigger",
+    downstream_pipeline: { id: 103, project_id: 400, status: "success", ref: "release", sha: "def12345",
+      web_url: "https://gitlab.example/third/project/-/pipelines/103" },
+  }
+  const text: string = path.includes("/bridges")
+    ? JSON.stringify(path.includes("pipelines/101/") ? [bridgeData[0]] : path.includes("pipelines/102/") ? [nestedBridge] : [])
+    : JSON.stringify(path.includes("pipelines/103/") ? [jobData[1]] : [])
+  return { text, truncated: false }
+})
+const nestedDialogs: PipelineDialogs = new PipelineDialogs(context)
+await nestedDialogs.jobs(nestedGlab, snapshot.pipelines[0])
+for (const expected of [102, 103]) {
+  assert.ok(logRender)
+  const nestedPicker: TestRendererSetup = await testRender(logRender, { width: 100, height: 40 })
+  try {
+    await nestedPicker.waitForFrame((frame: string): boolean => frame.includes(expected === 102 ? "trigger tests" : "another trigger"))
+    await layers.at(-1)?.commands?.find((command: KeymapCommand): boolean => command.bind === "enter")?.run()
+    await new Promise<void>((resolve: () => void): void => { setImmediate(resolve) })
+  } finally {
+    await nestedPicker.dispose()
+  }
+}
+assert.ok(nestedCalls.some((path: string): boolean => path.startsWith("projects/300/pipelines/102/bridges")))
+assert.ok(nestedCalls.some((path: string): boolean => path.startsWith("projects/400/pipelines/103/jobs")))
+assert.ok(logRender)
+const finalPicker: TestRendererSetup = await testRender(logRender, { width: 100, height: 40 })
+try {
+  await finalPicker.waitForFrame((frame: string): boolean => frame.includes("#103 · release · Jobs") && frame.includes("✓ build"))
+  await layers.at(-1)?.commands?.find((command: KeymapCommand): boolean => command.bind === "alt+left")?.run()
+} finally {
+  await finalPicker.dispose()
+}
+assert.ok(logRender)
+const backPicker: TestRendererSetup = await testRender(logRender, { width: 100, height: 40 })
+try {
+  await backPicker.waitForFrame((frame: string): boolean => frame.includes("#102 · main · Jobs") && frame.includes("another trigger"))
+} finally {
+  await backPicker.dispose()
 }
 assert.equal(pickerRenderer.listenerCount("resize"), 0)
 

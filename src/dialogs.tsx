@@ -34,7 +34,7 @@ export function LogDialog(props: { context: Plugin.Context; glab: Glab; job: Job
     request = current
     setNote("Loading…")
     try {
-      const trace: Trace = await props.glab.trace(props.job.id, current.signal)
+      const trace: Trace = await props.glab.trace(props.job.id, current.signal, props.job.projectID)
       if (current.signal.aborted) return
       const unchanged: boolean = previousTrace === trace.text
       previousTrace = trace.text
@@ -86,6 +86,12 @@ export function LogDialog(props: { context: Plugin.Context; glab: Glab; job: Job
       <text fg={props.context.theme.text.muted}>↑↓/PgUp/PgDn scroll · r refresh · b browser · Esc close</text>
     </box>
   )
+}
+
+interface JobLevel {
+  pipeline: Pipeline
+  jobs: Job[]
+  parent?: JobLevel
 }
 
 export class PipelineDialogs {
@@ -147,17 +153,28 @@ export class PipelineDialogs {
     if (pipeline) await this.jobs(glab, pipeline)
   }
 
-  async jobs(glab: Glab, pipeline: Pipeline): Promise<void> {
+  async jobs(glab: Glab, pipeline: Pipeline, parent?: JobLevel): Promise<void> {
     const jobs: Job[] | undefined = await this.loading(
-      `Loading jobs for #${pipeline.id}…`, (signal: AbortSignal): Promise<Job[]> => glab.jobs(pipeline.id, signal),
+      `Loading jobs for #${pipeline.id}…`, (signal: AbortSignal): Promise<Job[]> => glab.jobs(pipeline.id, signal, pipeline.projectID),
     )
     if (!jobs) return
-    if (jobs.length === 0) {
+    if (jobs.length === 0 && !parent) {
       await this.context.ui.dialog.alert({ title: "Pipelines", message: "No jobs or triggers in this pipeline." })
       return
     }
+    this.showJobs(glab, pipeline, jobs, parent)
+  }
+
+  private showJobs(glab: Glab, pipeline: Pipeline, jobs: Job[], parent?: JobLevel): void {
     this.context.ui.dialog.show((): JSX.Element => <JobDialog context={this.context} jobs={jobs} pipeline={pipeline}
       browse={(url: string): Promise<void> => browseUrl(this.context, glab, url)}
-      onSelect={(job: Job): void => this.context.ui.dialog.show((): JSX.Element => <LogDialog context={this.context} glab={glab} job={job} />)} />)
+      onBack={parent ? (): void => this.showJobs(glab, parent.pipeline, parent.jobs, parent.parent) : undefined}
+      onSelect={(job: Job): void => {
+        if (job.downstream) {
+          void this.jobs(glab, job.downstream, { pipeline, jobs, parent })
+          return
+        }
+        this.context.ui.dialog.show((): JSX.Element => <LogDialog context={this.context} glab={glab} job={job} />)
+      }} />)
   }
 }

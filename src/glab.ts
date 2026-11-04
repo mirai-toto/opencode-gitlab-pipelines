@@ -96,21 +96,26 @@ export class Glab {
     return !existsSync(join(root, ".gitlab-ci.yml"))
   }
 
-  async jobs(pipelineID: number, signal: AbortSignal): Promise<Job[]> {
+  async jobs(pipelineID: number, signal: AbortSignal, projectID?: number): Promise<Job[]> {
     this.checkID(pipelineID)
+    if (projectID !== undefined) this.checkID(projectID)
+    const project: string = projectID === undefined ? ":id" : String(projectID)
     const [jobs, bridges]: [CommandOutput, CommandOutput] = await Promise.all([
-      this.run("glab", ["api", `projects/:id/pipelines/${pipelineID}/jobs?per_page=100`,
+      this.run("glab", ["api", `projects/${project}/pipelines/${pipelineID}/jobs?per_page=100`,
         "--method", "GET", "--paginate", "--output", "json"], { directory: this.directory, signal }),
-      this.run("glab", ["api", `projects/:id/pipelines/${pipelineID}/bridges?per_page=100`,
+      this.run("glab", ["api", `projects/${project}/pipelines/${pipelineID}/bridges?per_page=100`,
         "--method", "GET", "--paginate", "--output", "json"], { directory: this.directory, signal }),
     ])
-    return [...parseJobs(jobs.text), ...parseBridges(bridges.text)].sort((left: Job, right: Job): number => left.id - right.id)
+    return [...parseJobs(jobs.text), ...parseBridges(bridges.text)]
+      .map((job: Job): Job => projectID === undefined ? job : { ...job, projectID })
+      .sort((left: Job, right: Job): number => left.id - right.id)
   }
 
-  async trace(jobID: number, signal: AbortSignal): Promise<Trace> {
+  async trace(jobID: number, signal: AbortSignal, projectID?: number): Promise<Trace> {
     this.checkID(jobID)
+    if (projectID !== undefined) this.checkID(projectID)
     const output: CommandOutput = await this.run("glab", [
-      "api", `projects/:id/jobs/${jobID}/trace`, "--method", "GET",
+      "api", `projects/${projectID ?? ":id"}/jobs/${jobID}/trace`, "--method", "GET",
     ], { directory: this.directory, signal, tail: true })
     const lines: string[] = cleanText(output.text).split("\n")
     return { text: lines.slice(-2000).join("\n"), truncated: output.truncated || lines.length > 2000 }
