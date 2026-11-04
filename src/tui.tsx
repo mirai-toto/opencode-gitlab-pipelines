@@ -72,8 +72,11 @@ export function PipelinePanel(props: {
         <Show when={store.state().error}>
           <text fg="#ff7b86" maxHeight={2}>{store.state().error}</text>
         </Show>
-        <Show when={!store.state().error && !store.state().loading && store.state().pipelines.length === 0}>
-          <text fg={props.context.theme.text.muted}>No pipelines</text>
+        <Show when={!store.state().error && store.state().notice}>
+          <text fg={props.context.theme.text.muted} maxHeight={2}>{store.state().notice}</text>
+        </Show>
+        <Show when={!store.state().error && !store.state().notice && !store.state().loading && store.state().pipelines.length === 0}>
+          <text fg={props.context.theme.text.muted}>No pipelines for {store.state().ref || "current branch"}</text>
         </Show>
         <For each={store.state().error ? [] : store.state().pipelines}>{(pipeline: Pipeline): JSX.Element => (
           <text fg={statusColor(pipeline.status)} wrapMode="none" truncate height={1}

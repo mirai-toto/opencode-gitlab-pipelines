@@ -13,7 +13,9 @@ import { createEffect, createMemo, For, on, onCleanup as onCleanup2, Show } from
 
 // src/glab.ts
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import { release } from "os";
+import { join } from "path";
 
 // src/model.ts
 function cleanText(value) {
@@ -164,20 +166,38 @@ class Glab {
   async snapshot(signal) {
     const branch = (await this.run("git", ["branch", "--show-current"], { directory: this.directory, signal })).text.trim();
     const sha = branch ? "" : (await this.run("git", ["rev-parse", "HEAD"], { directory: this.directory, signal })).text.trim();
-    const output = await this.run("glab", [
-      "ci",
-      "list",
-      "--output",
-      "json",
-      "--per-page",
-      "5",
-      "--order",
-      "id",
-      "--sort",
-      "desc",
-      ...branch ? ["--ref", branch] : ["--sha", sha]
-    ], { directory: this.directory, signal });
-    return { ref: branch || sha.slice(0, 8), pipelines: parsePipelines(output.text) };
+    const ref = branch || sha.slice(0, 8);
+    let output;
+    try {
+      output = await this.run("glab", [
+        "ci",
+        "list",
+        "--output",
+        "json",
+        "--per-page",
+        "5",
+        "--order",
+        "id",
+        "--sort",
+        "desc",
+        ...branch ? ["--ref", branch] : ["--sha", sha]
+      ], { directory: this.directory, signal });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("none of the git remotes configured for this repository point to a known GitLab host")) {
+        const missingCi = await this.missingCiFile(signal);
+        return { ref, pipelines: [], notice: missingCi ? `No pipelines for ${ref} (.gitlab-ci.yml missing)` : "No recognized GitLab remote" };
+      }
+      throw error;
+    }
+    const pipelines = parsePipelines(output.text);
+    if (pipelines.length === 0 && await this.missingCiFile(signal)) {
+      return { ref, pipelines, notice: `No pipelines for ${ref} (.gitlab-ci.yml missing)` };
+    }
+    return { ref, pipelines };
+  }
+  async missingCiFile(signal) {
+    const root = (await this.run("git", ["rev-parse", "--show-toplevel"], { directory: this.directory, signal })).text.trim();
+    return !existsSync(join(root, ".gitlab-ci.yml"));
   }
   async jobs(pipelineID, signal) {
     this.checkID(pipelineID);
@@ -428,6 +448,13 @@ class PipelineDialogs {
     const snapshot = await this.loading("Loading pipelines\u2026", (signal) => glab.snapshot(signal));
     if (!snapshot)
       return;
+    if (snapshot.notice) {
+      await this.context.ui.dialog.alert({
+        title: "Pipelines",
+        message: snapshot.notice
+      });
+      return;
+    }
     if (snapshot.pipelines.length === 0) {
       await this.context.ui.dialog.alert({
         title: "Pipelines",
@@ -509,7 +536,7 @@ class PipelineStore {
       this.state = () => state;
       this.update = (value) => mutate((draft) => {
         const next = typeof value === "function" ? value(draft) : value;
-        Object.assign(draft, next, { error: next.error });
+        Object.assign(draft, next, { error: next.error, notice: next.notice });
       });
       return;
     }
@@ -537,7 +564,7 @@ class PipelineStore {
     const request = new AbortController;
     this.request = request;
     const directory = this.state().directory;
-    this.update((state) => ({ ...state, loading: true, error: undefined }));
+    this.update((state) => ({ ...state, loading: true, error: undefined, notice: undefined }));
     try {
       const snapshot = await this.load(directory, request.signal);
       if (this.request !== request || request.signal.aborted)
@@ -638,60 +665,72 @@ function PipelinePanel(props) {
           }
         }), _$createComponent2(Show, {
           get when() {
-            return _$memo(() => !!(!store.state().error && !store.state().loading))() && store.state().pipelines.length === 0;
+            return _$memo(() => !!!store.state().error)() && store.state().notice;
           },
           get children() {
             var _el$7 = _$createElement2("text");
-            _$insertNode2(_el$7, _$createTextNode2(`No pipelines`));
+            _$setProp2(_el$7, "maxHeight", 2);
+            _$insert2(_el$7, () => store.state().notice);
             _$effect2((_$p) => _$setProp2(_el$7, "fg", props.context.theme.text.muted, _$p));
             return _el$7;
+          }
+        }), _$createComponent2(Show, {
+          get when() {
+            return _$memo(() => !!(!store.state().error && !store.state().notice && !store.state().loading))() && store.state().pipelines.length === 0;
+          },
+          get children() {
+            var _el$8 = _$createElement2("text"), _el$9 = _$createTextNode2(`No pipelines for `);
+            _$insertNode2(_el$8, _el$9);
+            _$insert2(_el$8, () => store.state().ref || "current branch", null);
+            _$effect2((_$p) => _$setProp2(_el$8, "fg", props.context.theme.text.muted, _$p));
+            return _el$8;
           }
         }), _$createComponent2(For, {
           get each() {
             return _$memo(() => !!store.state().error)() ? [] : store.state().pipelines;
           },
           children: (pipeline) => (() => {
-            var _el$11 = _$createElement2("text"), _el$12 = _$createTextNode2(` #`), _el$13 = _$createTextNode2(` \xB7 `);
-            _$insertNode2(_el$11, _el$12);
-            _$insertNode2(_el$11, _el$13);
-            _$setProp2(_el$11, "wrapMode", "none");
-            _$setProp2(_el$11, "truncate", true);
-            _$setProp2(_el$11, "height", 1);
-            _$setProp2(_el$11, "onMouseUp", (event) => click(event, () => {
+            var _el$12 = _$createElement2("text"), _el$13 = _$createTextNode2(` #`), _el$14 = _$createTextNode2(` \xB7 `);
+            _$insertNode2(_el$12, _el$13);
+            _$insertNode2(_el$12, _el$14);
+            _$setProp2(_el$12, "wrapMode", "none");
+            _$setProp2(_el$12, "truncate", true);
+            _$setProp2(_el$12, "height", 1);
+            _$setProp2(_el$12, "onMouseUp", (event) => click(event, () => {
               dialogs.jobs(new Glab(directory()), pipeline);
             }));
-            _$insert2(_el$11, () => statusIcon(pipeline.status), _el$12);
-            _$insert2(_el$11, () => pipeline.id, _el$13);
-            _$insert2(_el$11, () => pipeline.status, null);
-            _$effect2((_$p) => _$setProp2(_el$11, "fg", statusColor(pipeline.status), _$p));
-            return _el$11;
+            _$insert2(_el$12, () => statusIcon(pipeline.status), _el$13);
+            _$insert2(_el$12, () => pipeline.id, _el$14);
+            _$insert2(_el$12, () => pipeline.status, null);
+            _$effect2((_$p) => _$setProp2(_el$12, "fg", statusColor(pipeline.status), _$p));
+            return _el$12;
           })()
         }), (() => {
-          var _el$9 = _$createElement2("box"), _el$0 = _$createElement2("text"), _el$1 = _$createElement2("text");
-          _$insertNode2(_el$9, _el$0);
-          _$insertNode2(_el$9, _el$1);
-          _$setProp2(_el$9, "flexDirection", "row");
-          _$setProp2(_el$9, "gap", 2);
-          _$setProp2(_el$0, "height", 1);
-          _$setProp2(_el$0, "wrapMode", "none");
-          _$setProp2(_el$0, "onMouseUp", (event) => click(event, () => {
+          var _el$0 = _$createElement2("box"), _el$1 = _$createElement2("text"), _el$10 = _$createElement2("text");
+          _$insertNode2(_el$0, _el$1);
+          _$insertNode2(_el$0, _el$10);
+          _$setProp2(_el$0, "flexDirection", "row");
+          _$setProp2(_el$0, "gap", 2);
+          _$setProp2(_el$1, "height", 1);
+          _$setProp2(_el$1, "wrapMode", "none");
+          _$setProp2(_el$1, "onMouseUp", (event) => click(event, () => {
             refresh();
           }));
-          _$insert2(_el$0, () => store.state().loading ? "\u21BB Refreshing\u2026" : "\u21BB Refresh");
-          _$insertNode2(_el$1, _$createTextNode2(`Browse`));
-          _$setProp2(_el$1, "onMouseUp", (event) => click(event, () => {
+          _$insert2(_el$1, () => store.state().loading ? "\u21BB Refreshing\u2026" : "\u21BB Refresh");
+          _$insertNode2(_el$10, _$createTextNode2(`Browse`));
+          _$setProp2(_el$10, "onMouseUp", (event) => click(event, () => {
             browse();
           }));
           _$effect2((_p$) => {
             var _v$ = props.context.theme.text.muted, _v$2 = props.context.theme.text.muted;
-            _v$ !== _p$.e && (_p$.e = _$setProp2(_el$0, "fg", _v$, _p$.e));
-            _v$2 !== _p$.t && (_p$.t = _$setProp2(_el$1, "fg", _v$2, _p$.t));
+            _v$ !== _p$.e && (_p$.e = _$setProp2(_el$1, "fg", _v$, _p$.e));
+            _v$2 !== _p$.t && (_p$.t = _$setProp2(_el$10, "fg", _v$2, _p$.t));
             return _p$;
           }, {
             e: undefined,
             t: undefined
           });
-          return _el$9;
+          return _el$0;
         })()];
       }
     }), null);

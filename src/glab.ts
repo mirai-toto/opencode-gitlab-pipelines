@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
+import { existsSync } from "node:fs"
 import { release } from "node:os"
+import { join } from "node:path"
 import { cleanText, parseJobs, parsePipelines, webUrl, type Job, type Snapshot, type Trace } from "./model"
 
 export interface CommandOptions {
@@ -68,11 +70,30 @@ export class Glab {
   async snapshot(signal: AbortSignal): Promise<Snapshot> {
     const branch: string = (await this.run("git", ["branch", "--show-current"], { directory: this.directory, signal })).text.trim()
     const sha: string = branch ? "" : (await this.run("git", ["rev-parse", "HEAD"], { directory: this.directory, signal })).text.trim()
-    const output: CommandOutput = await this.run("glab", [
-      "ci", "list", "--output", "json", "--per-page", "5", "--order", "id", "--sort", "desc",
-      ...(branch ? ["--ref", branch] : ["--sha", sha]),
-    ], { directory: this.directory, signal })
-    return { ref: branch || sha.slice(0, 8), pipelines: parsePipelines(output.text) }
+    const ref: string = branch || sha.slice(0, 8)
+    let output: CommandOutput
+    try {
+      output = await this.run("glab", [
+        "ci", "list", "--output", "json", "--per-page", "5", "--order", "id", "--sort", "desc",
+        ...(branch ? ["--ref", branch] : ["--sha", sha]),
+      ], { directory: this.directory, signal })
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes("none of the git remotes configured for this repository point to a known GitLab host")) {
+        const missingCi: boolean = await this.missingCiFile(signal)
+        return { ref, pipelines: [], notice: missingCi ? `No pipelines for ${ref} (.gitlab-ci.yml missing)` : "No recognized GitLab remote" }
+      }
+      throw error
+    }
+    const pipelines: Snapshot["pipelines"] = parsePipelines(output.text)
+    if (pipelines.length === 0 && await this.missingCiFile(signal)) {
+      return { ref, pipelines, notice: `No pipelines for ${ref} (.gitlab-ci.yml missing)` }
+    }
+    return { ref, pipelines }
+  }
+
+  private async missingCiFile(signal: AbortSignal): Promise<boolean> {
+    const root: string = (await this.run("git", ["rev-parse", "--show-toplevel"], { directory: this.directory, signal })).text.trim()
+    return !existsSync(join(root, ".gitlab-ci.yml"))
   }
 
   async jobs(pipelineID: number, signal: AbortSignal): Promise<Job[]> {

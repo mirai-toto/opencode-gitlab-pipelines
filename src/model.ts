@@ -18,6 +18,7 @@ export interface Job {
 export interface Snapshot {
   ref: string
   pipelines: Pipeline[]
+  notice?: string
 }
 
 export interface Trace {

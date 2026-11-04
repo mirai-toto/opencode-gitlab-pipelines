@@ -124,6 +124,10 @@ export class PipelineDialogs {
       "Loading pipelines…", (signal: AbortSignal): ReturnType<Glab["snapshot"]> => glab.snapshot(signal),
     )
     if (!snapshot) return
+    if (snapshot.notice) {
+      await this.context.ui.dialog.alert({ title: "Pipelines", message: snapshot.notice })
+      return
+    }
     if (snapshot.pipelines.length === 0) {
       await this.context.ui.dialog.alert({ title: "Pipelines", message: `No pipelines for ${snapshot.ref}.` })
       return

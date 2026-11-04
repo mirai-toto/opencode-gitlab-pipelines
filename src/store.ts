@@ -27,7 +27,7 @@ export class PipelineStore {
       this.state = (): State => state
       this.update = (value: State | ((current: State) => State)): void => mutate((draft: State): void => {
         const next: State = typeof value === "function" ? value(draft) : value
-        Object.assign(draft, next, { error: next.error })
+        Object.assign(draft, next, { error: next.error, notice: next.notice })
       })
       return
     }
@@ -54,7 +54,7 @@ export class PipelineStore {
     const request: AbortController = new AbortController()
     this.request = request
     const directory: string = this.state().directory
-    this.update((state: State): State => ({ ...state, loading: true, error: undefined }))
+    this.update((state: State): State => ({ ...state, loading: true, error: undefined, notice: undefined }))
     try {
       const snapshot: Snapshot = await this.load(directory, request.signal)
       if (this.request !== request || request.signal.aborted) return

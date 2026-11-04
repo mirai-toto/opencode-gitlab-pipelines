@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { DialogOptions, DialogSelectOptions, KeymapCommand, KeymapLayer, SlotClaim, ToastOptions } from "@opencode/plugin/tui/context"
 import type { TestRendererSetup } from "@opentui/core/testing"
@@ -44,6 +46,33 @@ const signal: AbortSignal = new AbortController().signal
 const glab: Glab = new Glab("/test/project", fakeRunner)
 assert.deepEqual(await glab.snapshot(signal), snapshot)
 assert.equal(calls[1].args[calls[1].args.indexOf("--ref") + 1], "feature/test")
+const ciRoot: string = mkdtempSync("/tmp/opencode/pipelines-ci-check.")
+try {
+  const gitOutput: (args: readonly string[]) => CommandOutput = (args: readonly string[]): CommandOutput => ({
+    text: args[0] === "branch" ? "main\n" : `${ciRoot}\n`, truncated: false,
+  })
+  const noRemote: Glab = new Glab(ciRoot, async (program: string, args: readonly string[]): Promise<CommandOutput> => {
+    if (program === "git") return gitOutput(args)
+    throw new Error("none of the git remotes configured for this repository point to a known GitLab host")
+  })
+  assert.deepEqual(await noRemote.snapshot(signal), { ref: "main", pipelines: [], notice: "No pipelines for main (.gitlab-ci.yml missing)" })
+  const empty: Glab = new Glab(ciRoot, async (program: string, args: readonly string[]): Promise<CommandOutput> =>
+    program === "git" ? gitOutput(args) : { text: "[]", truncated: false })
+  assert.deepEqual(await empty.snapshot(signal), { ref: "main", pipelines: [], notice: "No pipelines for main (.gitlab-ci.yml missing)" })
+  const existing: Glab = new Glab(ciRoot, async (program: string, args: readonly string[]): Promise<CommandOutput> =>
+    program === "git" ? gitOutput(args) : { text: JSON.stringify(pipelineData), truncated: false })
+  assert.equal((await existing.snapshot(signal)).pipelines.length, 2) // Custom CI paths can still create pipelines.
+  writeFileSync(join(ciRoot, ".gitlab-ci.yml"), "stages: [test]\n")
+  assert.deepEqual(await empty.snapshot(signal), { ref: "main", pipelines: [] })
+  assert.deepEqual(await noRemote.snapshot(signal), { ref: "main", pipelines: [], notice: "No recognized GitLab remote" })
+} finally {
+  rmSync(ciRoot, { recursive: true, force: true })
+}
+const brokenGlab: Glab = new Glab("/test", async (program: string): Promise<CommandOutput> => {
+  if (program === "git") return { text: "main\n", truncated: false }
+  throw new Error("GitLab authentication failed")
+})
+await assert.rejects(brokenGlab.snapshot(signal), /GitLab authentication failed/)
 assert.deepEqual((await glab.jobs(101, signal)).map((job: Job): number => job.id), [201, 202])
 assert.ok(calls.at(-1)?.args.includes("--paginate"))
 const trace: Awaited<ReturnType<Glab["trace"]>> = await glab.trace(202, signal)
@@ -203,6 +232,14 @@ try {
   assert.equal(sidebarLoads, beforeRefresh + 1)
   assert.equal(preferences.collapsed, false)
   assert.equal(toasts.at(-1)?.message, "Pipeline list refreshed")
+  sidebarSnapshot = { ref: "main", pipelines: [], notice: "No recognized GitLab remote" }
+  await renderStore.refresh(true)
+  await panel.waitForFrame((frame: string): boolean => frame.includes("No recognized GitLab remote"))
+  assert.ok(!panel.captureCharFrame().includes("No pipelines for"))
+  sidebarSnapshot = { ref: "feature/test", pipelines: [] }
+  await renderStore.refresh(true)
+  await panel.waitForFrame((frame: string): boolean => frame.includes("No pipelines for feature/test"))
+  assert.ok(!panel.captureCharFrame().includes("No recognized GitLab remote"))
   // Recover the exact reported placeholder without a collapse/reopen cycle.
   sidebarSnapshot = { ref: "", pipelines: [] }
   await renderStore.refresh(true)
