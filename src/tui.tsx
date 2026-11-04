@@ -1,3 +1,4 @@
+/** @jsxImportSource @opentui/solid */
 import type { LocationRef } from "@opencode/client"
 import { Plugin } from "@opencode/plugin/tui"
 import type { Route } from "@opencode/plugin/tui/context"

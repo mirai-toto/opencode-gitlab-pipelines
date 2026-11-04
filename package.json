@@ -14,8 +14,9 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "bash scripts/test.sh",
+    "test:package": "bash scripts/test-package.sh",
     "test:runtime": "bash scripts/test-runtime.sh",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test && npm run test:package"
   },
   "peerDependencies": {
     "@opencode/plugin": ">=2.2.5 <3",

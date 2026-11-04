@@ -1,3 +1,4 @@
+/** @jsxImportSource @opentui/solid */
 import type { Plugin } from "@opencode/plugin/tui"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions, type JSX } from "@opentui/solid"
