@@ -12,8 +12,8 @@ test_dir="${XDG_CACHE_HOME:-$HOME/.cache}/opencode-gitlab-pipelines/runtime-$run
 mkdir -p "$test_dir/src" "$test_dir/test" "$test_dir/scripts"
 npm install --prefix "$test_dir" --ignore-scripts --no-audit --no-fund \
   "@opentui/core@$runtime_version" "@opentui/solid@$runtime_version" "@opencode/plugin@2.2.5" "solid-js@1.9.17"
-for file in dialogs.tsx glab.ts model.ts store.ts tui.tsx; do
-  cp -- "$project_dir/src/$file" "$test_dir/src/$file"
+for file in "$project_dir"/src/*; do
+  cp -- "$file" "$test_dir/src/"
 done
 cp -- "$project_dir/test/check.tsx" "$test_dir/test/check.tsx"
 cp -- "$project_dir/scripts/test.sh" "$test_dir/scripts/test.sh"
